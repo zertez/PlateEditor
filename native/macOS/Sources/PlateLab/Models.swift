@@ -96,23 +96,36 @@ func quantity(_ text: String, name: String, optional: Bool = false) throws -> Do
 
 @MainActor enum Inventory {
     static func addBatch(_ batch: ProteinBatch, in context: ModelContext) throws {
-        guard !clean(batch.name).isEmpty else { throw LabError("Give the protein a name.") }
-        if let c=batch.concentrationMgML, !c.isFinite || c < 0 { throw LabError("Invalid concentration.") }
+        try validateBatch(batch)
         context.insert(batch)
         try save(context)
     }
-    static func addAliquot(_ aliquot: Aliquot, to batch: ProteinBatch, in context: ModelContext) throws {
-        guard !clean(aliquot.label).isEmpty else { throw LabError("Enter a tube ID.") }
+    private static func validateBatch(_ batch: ProteinBatch) throws {
+        guard !clean(batch.name).isEmpty else { throw LabError("Give the protein a name.") }
+        if let c=batch.concentrationMgML, !c.isFinite || c < 0 { throw LabError("Invalid concentration.") }
+    }
+    private static func validateAliquot(_ aliquot: Aliquot, in context: ModelContext) throws {
+        guard !clean(aliquot.label).isEmpty else { throw LabError("Enter a sample name.") }
         if let volume=aliquot.startingVolumeUL, !volume.isFinite || volume<0 { throw LabError("Enter a non-negative volume, or leave it blank if unknown.") }
         guard aliquot.startingThawCount == nil || aliquot.startingThawCount! >= 0 else { throw LabError("Thaw count cannot be negative.") }
         if let c=aliquot.concentrationMgML, !c.isFinite || c < 0 { throw LabError("Invalid concentration.") }
         let all=try context.fetch(FetchDescriptor<Aliquot>())
-        guard !all.contains(where: { $0.label.caseInsensitiveCompare(clean(aliquot.label)) == .orderedSame }) else { throw LabError("That tube ID already exists. Use a unique ID for each aliquot.") }
+        guard !all.contains(where: { $0.label.caseInsensitiveCompare(clean(aliquot.label)) == .orderedSame }) else { throw LabError("A sample with this name already exists. Use a different name for each tube.") }
+    }
+    static func addSample(_ aliquot: Aliquot, with batch: ProteinBatch, in context: ModelContext) throws {
+        try validateBatch(batch)
+        try validateAliquot(aliquot,in:context)
+        aliquot.label=clean(aliquot.label)
+        context.insert(batch);context.insert(aliquot);aliquot.batch=batch
+        try save(context)
+    }
+    static func addAliquot(_ aliquot: Aliquot, to batch: ProteinBatch, in context: ModelContext) throws {
+        try validateAliquot(aliquot,in:context)
         aliquot.label=clean(aliquot.label); context.insert(aliquot); aliquot.batch=batch
         try save(context)
     }
     static func record(_ kind: EventKind, for aliquot: Aliquot, amount: Double? = nil, location: String = "", notes: String = "", experiment: String = "", plateID: String? = nil, wells: String = "", in context: ModelContext) throws {
-        guard !aliquot.archived else { throw LabError("Restore this aliquot before recording an event.") }
+        guard !aliquot.archived else { throw LabError("Restore this sample before recording an event.") }
         var delta=0.0; var state: StorageState?; var newLocation: String?;var volumeAfter: Double?
         switch kind {
         case .withdrawal:

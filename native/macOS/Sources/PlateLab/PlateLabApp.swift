@@ -19,7 +19,7 @@ import SwiftData
         Window("PlateLab", id: "main") {
             if let state=bootstrap.state {
                 RootView().environmentObject(state).modelContainer(state.container)
-                    .frame(minWidth:1060,minHeight:680).tint(Color(red:0.15,green:0.42,blue:0.35))
+                    .frame(minWidth:1060,minHeight:680).tint(Color(nsColor: .systemTeal))
             } else {
                 VStack(alignment:.leading,spacing:18) {
                     Text("PlateLab could not open its library").font(.title2.bold())
@@ -50,7 +50,7 @@ struct RootView: View {
                     Label(section.rawValue,systemImage:section == .samples ? "shippingbox":"square.grid.3x3").tag(section)
                 }.listStyle(.sidebar)
                 VStack(alignment:.leading,spacing:7) {
-                    Text("\(aliquots.filter { !$0.archived }.count) active aliquots").font(.subheadline)
+                    Text("\(aliquots.filter { !$0.archived }.count) samples").font(.subheadline)
                     Label("Saved on this Mac",systemImage:"internaldrive").font(.caption).foregroundStyle(.secondary)
                     Menu("Backups & export") {
                         Button("Export samples backup…",action:app.exportSamples)

@@ -15,13 +15,15 @@ Set `NODE_BIN` if Node is not on your PATH. The script creates `dist/PlateLab.ap
 
 ## Samples
 
-1. Create a protein batch with its construct, batch ID, optional concentration, buffer, preparation date, and notes.
-2. Register each existing tube with a unique ID, current remaining volume in µL, optional concentration in mg/mL, current state, storage location, and previous thaw count. Leave the count blank if the earlier history is unknown. Registration does not transfer material from another tube.
-3. Record withdrawals, thawing, freezing, storage moves, and volume corrections. Corrections require a reason. Each action adds a dated history entry; archiving preserves the history.
+The tracker opens as one compact table: sample, volume left, concentration, thaw count, and location.
 
-An aliquot inherits the batch concentration at registration and keeps its own concentration snapshot. Remaining protein mass is calculated as volume (µL) × concentration (mg/mL), in µg. Each tube has independent volume and thaw history. Marking a frozen tube thawed adds one thaw; refreezing does not add another. Unknown previous history stays unknown.
+1. Choose **Add sample** and enter the name and any known values. Each sample represents one tube; protein records are created in the background in the same save. Extra fields are optional.
+2. Choose **Use…** beside a sample, enter the volume used, and see the amount that will remain before saving. Notes are optional.
+3. Click a sample name to see its history. Notes, import sources, and additional protein details expand only when needed. Use the row’s **…** menu to mark frozen/thawed, move storage, adjust volume, or archive the sample.
 
-Leave the volume blank when it is unknown. The app preserves that distinction from zero and requires a measured volume before recording withdrawals. Use **Correct volume** with a reason to establish the first known balance. Imported history can retain undated events or dates without an invented time. Sample backup version 2 preserves these fields; version 1 backups remain readable.
+Each tube has independent volume and thaw history. Marking a frozen tube thawed adds one thaw; refreezing does not add another. Unknown previous history stays unknown. Remaining protein mass is calculated as volume (µL) × concentration (mg/mL), in µg.
+
+Leave the volume blank when it is unknown. The app preserves that distinction from zero and requires a measured volume before recording withdrawals. Use **Adjust volume** with a reason to establish the first known balance. Imported history can retain undated events or dates without an invented time. Sample backup version 2 preserves these fields; version 1 backups remain readable.
 
 ## Plates and sample usage
 

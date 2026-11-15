@@ -3,6 +3,24 @@ import SwiftData
 @testable import PlateLab
 
 final class InventoryTests: XCTestCase {
+    @MainActor func testSingleStepRegistrationIsAtomic() throws {
+        let (app,_,_)=try fixture();let context=app.container.mainContext
+        let invalidBatch=ProteinBatch(name:"Duplicate attempt")
+        let duplicate=Aliquot(label:"DEMO-01",volume:10,concentration:1,thawCount:0,state:.unknown,location:"")
+        XCTAssertThrowsError(try Inventory.addSample(duplicate,with:invalidBatch,in:context))
+        try context.save()
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<ProteinBatch>()),1)
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<Aliquot>()),1)
+        let batch=ProteinBatch(name:"New tube",variant:"Cut")
+        let tube=Aliquot(label:"New tube",volume:nil,concentration:nil,thawCount:nil,state:.unknown,location:"")
+        try Inventory.addSample(tube,with:batch,in:context)
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<ProteinBatch>()),2)
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<Aliquot>()),2)
+        XCTAssertEqual(tube.batch?.id,batch.id)
+        XCTAssertEqual(batch.aliquots.map(\.id),[tube.id])
+        XCTAssertNil(tube.remainingUL)
+        XCTAssertNil(tube.startingThawCount)
+    }
     @MainActor func testUnknownVolumeCanBeMeasuredWithoutInventingAnOpeningBalance() throws {
         let (app,batch,_)=try fixture();let context=app.container.mainContext
         let a=Aliquot(label:"Unknown-volume",volume:nil,concentration:2,thawCount:0,state:.unknown,location:"")
