@@ -10,6 +10,11 @@
   function project(){return library.projects.find(p=>p.id===library.active);}
   function tell(message,error=false){$('notice').textContent=message;$('notice').hidden=false;$('notice').classList.toggle('error',error);}
   function persist(){
+    if(window.PlateLab){
+      $('save-state').textContent='Saving on this Mac…';
+      window.PlateLab.saveLibrary(library).then(()=>{storageOK=true;$('save-state').textContent='✓ Saved on this Mac';}).catch(e=>{storageOK=false;$('save-state').textContent='Not saved — export a backup';tell('Could not save the plate library: '+e.message,true);});
+      return;
+    }
     try{localStorage.setItem(KEY,JSON.stringify(library));storageOK=true;$('save-state').textContent='✓ Saved in this browser';}
     catch(e){storageOK=false;$('save-state').textContent='Not saved — download a backup';tell('Browser storage is unavailable or full. Your work is still open; download a backup before closing.',true);}
   }
@@ -87,13 +92,14 @@
   for(const selector of ['main','.app-header','#display-options','.display-status','#notice','.plate-card-top','.plate-card-bottom','#plate-grid'])fitObserver.observe(document.querySelector(selector));
   function updateDisplay(next){
     display=V.normalize(next);
-    try{localStorage.setItem(DISPLAY_KEY,JSON.stringify(display));}catch(e){tell('Display settings could not be saved in this browser.',true);}
+    try{localStorage.setItem(DISPLAY_KEY,JSON.stringify(display));window.PlateLab?.saveDisplay(display).catch(e=>tell(e.message,true));}catch(e){tell('Display settings could not be saved.',true);}
     renderGrid();renderSelection();
   }
   function renderSelection(){
     const p=project();if(!p)return;
     document.querySelectorAll('[data-well]').forEach(b=>{const active=selection.has(+b.dataset.well);b.classList.toggle('selected',active);b.setAttribute('aria-pressed',active);});
     const names=[...selection].sort((a,b)=>a-b).map(i=>M.wellName(i,p.layout[0].Cols));
+    window.PlateLab?.selection(p.id,p.title,names).catch(e=>tell(e.message,true));
     $('selection-label').textContent=names.length?`${names.length} selected · ${names.slice(0,5).join(', ')}${names.length>5?'…':''}`:'No wells selected';
     $('clear-wells').disabled=!names.length;$('lock-wells').disabled=!names.length;$('assign-selected').disabled=!names.length;
     $('inspect-well').disabled=!names.length;
@@ -138,7 +144,7 @@
     const ok=change(next=>{M.ensureEditable(next,p.blocks.flat(),layer);if(wasSeries){p.blocks.forEach((indices,n)=>{const value=p.values[n],a=M.condition(next,{...s,Name:`${s.Name} · ${value} ${$('tag-unit').value}`});M.assign(next,indices,a,layer,value,$('tag-unit').value);});}else{idx=M.condition(next,s,editIndex);M.assign(next,p.blocks[0],idx,layer,tagValue(),$('tag-unit').value);}delete next.draft;},`Placed ${p.blocks.flat().length} wells. You can change their recipe by clicking the condition below.`);
     if(ok){selection=new Set(p.blocks.flat());mode=null;if(!wasSeries)editCondition(idx);render();document.querySelector('.inspector').scrollTo({top:0});}
     }catch(e){tell(e.message,true);}}
-  function download(data,name,type='application/json'){const u=URL.createObjectURL(new Blob([data],{type})),a=document.createElement('a');a.href=u;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);}
+  function download(data,name,type='application/json'){if(window.PlateLab){window.PlateLab.exportText(data,name,type).catch(e=>tell(e.message,true));return;}const u=URL.createObjectURL(new Blob([data],{type})),a=document.createElement('a');a.href=u;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);}
   const fileName=()=>project().title.replace(/[^\p{L}\p{N}._ -]/gu,'_').slice(0,150)||'Plate';
   $('project-list').onclick=e=>{const b=e.target.closest('[data-project]');if(b){stashDraft();navigate(b.dataset.project);restoreDraft();}};
   $('conditions').onclick=e=>{const b=e.target.closest('[data-condition]');if(b)editCondition(+b.dataset.condition);};
@@ -235,11 +241,18 @@
   $('analysis').onclick=e=>{try{sessionStorage.setItem('plate-setup.handoff',JSON.stringify(project().layout));$('analysis').href='Editor.html?setup=1';}catch(err){e.preventDefault();tell('Could not open the original editor. Download a backup before continuing.',true);}};
   function restoreDraft(){const d=project()?.draft;if(!d)return;editIndex=Number.isInteger(d.editIndex)&&project().layout[1][d.editIndex]?d.editIndex:null;$('condition-name').value=d.Name||'';$('condition-notes').value=d.SetupNotes||'';$('condition-color').value=color(d.Color);$('condition-type').value=d.Type||'Sample';$('target-volume').value=d.SetupTargetVolume??'';$('tag-value').value=d.tag??'';$('tag-unit').value=d.unit||'µM';$('recipe-rows').innerHTML='';(d.SetupRecipe?.length?d.SetupRecipe:[{name:'',volume:null,concentration:''}]).forEach(addReagent);$('composer-heading').textContent=editIndex===null?'New condition':`Edit condition ${editIndex+1}`;$('save-condition').textContent=editIndex===null?'Save condition':'Save recipe to all its wells';updateTotal();render();}
   async function start(){
+    let nativeData;
+    if(window.PlateLab){
+      document.querySelector('.library-note').textContent='Changes save automatically on this Mac. Export a backup to move devices or keep a separate copy.';
+      $('backup').textContent='Export plate backup';
+      try{nativeData=await window.PlateLab.load();localStorage.setItem(DISPLAY_KEY,JSON.stringify(nativeData.display));}
+      catch(e){tell('Could not open the Mac plate library. It has not been overwritten: '+e.message,true);return;}
+    }
     try{display=V.restore(JSON.parse(localStorage.getItem(DISPLAY_KEY)||'null'));localStorage.setItem(DISPLAY_KEY,JSON.stringify(display));}catch(e){display=V.normalize();}
-    try{const stored=localStorage.getItem(KEY);if(stored){const parsed=JSON.parse(stored);if(parsed.version!==1||!Array.isArray(parsed.projects))throw Error('Unrecognized plate library.');parsed.projects.forEach(p=>{M.validateLayout(p.layout);if(!Array.isArray(p.locked))throw Error('Invalid used-well markings.');});library=parsed;}}
+    try{const stored=window.PlateLab?JSON.stringify(nativeData.library):localStorage.getItem(KEY);if(stored){const parsed=JSON.parse(stored);if(parsed.version!==1||!Array.isArray(parsed.projects))throw Error('Unrecognized plate library.');parsed.projects.forEach(p=>{M.validateLayout(p.layout);if(!Array.isArray(p.locked))throw Error('Invalid used-well markings.');});library=parsed;}}
     catch(e){storageOK=false;tell('The saved library could not be read. It has not been overwritten. Download your browser data or restore a backup before continuing.',true);$('save-state').textContent='Saved library could not be read';return;}
     // Optional untracked local seeds. No scientific layouts are bundled in the public source.
-    try{const response=await fetch('local-layouts/index.json');if(response.ok){const entries=await response.json();for(const entry of entries){if(!library.projects.some(p=>p.source===entry.source)){const p=M.importProject(entry.layout,entry.title);p.source=entry.source;library.projects.push(p);}}}}catch(e){/* Offline and hosted installations need no seed library. */}
+    try{const response=window.PlateLab?{ok:false}:await fetch('local-layouts/index.json');if(response.ok){const entries=await response.json();for(const entry of entries){if(!library.projects.some(p=>p.source===entry.source)){const p=M.importProject(entry.layout,entry.title);p.source=entry.source;library.projects.push(p);}}}}catch(e){/* Offline and hosted installations need no seed library. */}
     if(!library.projects.length){const p=M.newProject('My first plate');library.projects.push(p);}
     if(!project())library.active=library.projects[0].id;
     resetForm();persist();render();restoreDraft();

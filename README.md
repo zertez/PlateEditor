@@ -4,6 +4,8 @@ This fork adds an intuitive plate workspace with per-condition reagent recipes, 
 
 **Start here:** [Plate Setup instructions](SETUP.md). On macOS, double-click `Start Plate Setup.command`. For original-editor analysis, first run `node scripts/build.mjs`. The original PlateEditor implementation and MIT license are retained.
 
+**Native Mac app:** [PlateLab](native/macOS/README.md) adds protein batches, aliquot volumes, thaw history, storage locations, and recorded sample transfers alongside the existing plate editor. Built with SwiftUI and SwiftData, with local saves and sample backups.
+
 ---
 
 # PlateEditor

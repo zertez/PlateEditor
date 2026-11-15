@@ -4,3 +4,5 @@
 /local-layouts/
 /.local/
 __pycache__/
+/native/macOS/.build/
+/native/macOS/.swiftpm/
