@@ -39,30 +39,46 @@
     renderGrid();renderSelection();
   }
   function renderGrid(){
+    $('well-preview').hidden=true;
     const p=project(),plate=p.layout[0],view=M.cells(p,layer),grid=$('plate-grid'),b=V.bounds(view,plate,display.crop);
     grid.style.setProperty('--cols',b.lastCol-b.firstCol+1);
+    grid.style.setProperty('--rows',b.lastRow-b.firstRow+1);
     document.body.classList.toggle('contents-view',display.mode!=='overview');
     document.body.classList.toggle('expanded-plate',display.wide);
     document.body.classList.toggle('fit-plate',display.fit);
     document.body.style.setProperty('--well-width',display.width+'px');
     document.body.style.setProperty('--well-font',display.font+'px');
+    const wellButton=c=>{
+      const a=c.area,rec=a?.SetupRecipe||[];
+      const title=`${c.name}: ${a?a.Name:'Unassigned'}${c.value!==null?' · '+c.value+' '+c.unit:''}${rec.length?'\n'+rec.map(r=>`${r.name}: ${r.volume===null?'not entered':r.volume+' µL'}${r.concentration?' ('+r.concentration+')':''}`).join('\n'):''}${a?.SetupNotes?'\n'+a.SetupNotes:''}${c.locked?' · Used / locked':''}`;
+      return `<button class="well ${a?'occupied':'empty'} ${c.locked?'locked':''}" data-well="${c.index}" aria-label="${esc(title)}" aria-pressed="${selection.has(c.index)}" title="${display.fit?'':esc(title)}" style="--well-color:${color(a?.Color)}">${display.fit?`<span class="fit-coordinate">${c.name}${c.locked?' · used':''}</span>`:V.wellContent(c,display)}</button>`;
+    };
     let html='<span class="axis-corner"></span>';
     for(let c=b.firstCol;c<=b.lastCol;c++)html+=`<button class="axis column-axis" data-col="${c}" aria-label="Select visible wells in column ${c+1}">${c+1}</button>`;
-    for(let r=b.firstRow;r<=b.lastRow;r++){
-      html+=`<button class="axis row-axis" data-row="${r}" aria-label="Select visible wells in row ${M.rowName(r)}">${M.rowName(r)}</button>`;
-      for(let col=b.firstCol;col<=b.lastCol;col++){
-        const c=view[r*plate.Cols+col],a=c.area,rec=a?.SetupRecipe||[];
-        const title=`${c.name}: ${a?a.Name:'Unassigned'}${c.value!==null?' · '+c.value+' '+c.unit:''}${rec.length?'\n'+rec.map(r=>`${r.name}: ${r.volume===null?'not entered':r.volume+' µL'}${r.concentration?' ('+r.concentration+')':''}`).join('\n'):''}${a?.SetupNotes?'\n'+a.SetupNotes:''}${c.locked?' · Used / locked':''}`;
-        html+=`<button class="well ${a?'occupied':'empty'} ${c.locked?'locked':''}" data-well="${c.index}" aria-label="${esc(title)}" aria-pressed="${selection.has(c.index)}" title="${esc(title)}" style="--well-color:${color(a?.Color)}">${V.wellContent(c,display)}</button>`;
+    if(display.fit){
+      const groups=V.plateGroups(view,plate,b);
+      grid.style.setProperty('--fit-columns',V.columnWeights(view,plate,b).map(w=>`minmax(0,${w}fr)`).join(' '));
+      for(let r=b.firstRow;r<=b.lastRow;r++){
+        html+=`<button class="axis row-axis" data-row="${r}" aria-label="Select visible wells in row ${M.rowName(r)}">${M.rowName(r)}</button>`;
+        for(const group of groups.filter(g=>g.row===r)){
+          const c=group.cells[0],assigned=c.area||c.value!==null||c.locked;
+          html+=`<div class="fit-group ${assigned?'assigned':'unassigned'}" style="grid-column:span ${group.cells.length};--members:${group.cells.length};--well-color:${color(c.area?.Color)}"><div class="fit-wells">${group.cells.map(wellButton).join('')}</div>${assigned?`<div class="fit-label" aria-hidden="true">${V.readableContent(c,display)}</div>`:''}</div>`;
+        }
+      }
+    }else{
+      for(let r=b.firstRow;r<=b.lastRow;r++){
+        html+=`<button class="axis row-axis" data-row="${r}" aria-label="Select visible wells in row ${M.rowName(r)}">${M.rowName(r)}</button>`;
+        for(let col=b.firstCol;col<=b.lastCol;col++)html+=wellButton(view[r*plate.Cols+col]);
       }
     }
     grid.innerHTML=html;
-    $('display-summary').textContent=`${display.mode==='overview'?'Overview':'Unabridged well details · '+display.font+' px text'} · ${M.wellName(b.firstRow*plate.Cols+b.firstCol,plate.Cols)}–${M.wellName(b.lastRow*plate.Cols+b.lastCol,plate.Cols)}${display.crop?' · empty outer rows/columns hidden':''}`;
+    $('display-summary').textContent=`${display.fit?'Shared replicate labels':'Unabridged well details · '+display.font+' px text'} · ${M.wellName(b.firstRow*plate.Cols+b.firstCol,plate.Cols)}–${M.wellName(b.lastRow*plate.Cols+b.lastCol,plate.Cols)}${display.crop?' · empty outer rows/columns hidden':''}`;
     syncDisplayControls();scheduleFit();
   }
   function syncDisplayControls(){
     for(const [id,value] of [['view-compact','overview'],['view-contents','contents'],['view-details','details']]){
-      $(id).classList.toggle('active',display.mode===value);$(id).setAttribute('aria-pressed',display.mode===value);
+      const active=value==='overview'?display.fit:!display.fit&&display.mode===value;
+      $(id).classList.toggle('active',active);$(id).setAttribute('aria-pressed',active);
     }
     Object.keys(V.fields).forEach(key=>{$('show-'+key).checked=display.fields[key];});
     $('well-width').value=display.width;$('well-font').value=display.font;$('crop-plate').checked=display.crop;$('print-layout').value=display.print;
@@ -72,37 +88,20 @@
   let fitFrame=0;
   function scheduleFit(){cancelAnimationFrame(fitFrame);fitFrame=requestAnimationFrame(fitPlate);}
   function fitPlate(){
-    const grid=$('plate-grid'),frame=$('plate-scale'),scroll=frame.parentElement;
-    if(!display.fit){
-      grid.style.transform='';grid.style.gridTemplateColumns='';frame.style.width='';frame.style.height='';scroll.style.height='';
-      $('plate-scale-label').textContent='Actual size';return;
-    }
-    // Use document coordinates so scrolling the page does not change the zoom.
+    const grid=$('plate-grid'),scroll=$('plate-scale').parentElement;
+    if(!display.fit){scroll.style.height='';$('plate-scale-label').textContent='Actual size';return;}
     const top=scroll.getBoundingClientRect().top+window.scrollY;
     const footer=document.querySelector('.plate-card-bottom').offsetHeight;
-    scroll.style.height=Math.max(120,window.innerHeight-top-footer-24)+'px';
-    const style=getComputedStyle(scroll),paddingX=parseFloat(style.paddingLeft)+parseFloat(style.paddingRight),paddingY=parseFloat(style.paddingTop)+parseFloat(style.paddingBottom);
-    const availableWidth=Math.max(1,scroll.clientWidth-paddingX-8),availableHeight=Math.max(1,scroll.clientHeight-paddingY-8);
-    grid.style.gridTemplateColumns='';
-    let scale;
-    if(display.mode!=='overview'){
-      const columns=Number(grid.style.getPropertyValue('--cols')),gap=parseFloat(getComputedStyle(grid).columnGap),axis=28;
-      const sizeColumns=zoom=>{grid.style.gridTemplateColumns=`${axis}px repeat(${columns},${(availableWidth/zoom-axis-columns*gap)/columns}px)`;};
-      // Fill the width while finding the largest text scale that also fits every row.
-      // Simply scaling the tall original cells would leave most of the screen empty.
-      let low=0.001,high=Math.min(1,availableWidth/(axis+columns*(display.width+gap)));
-      for(let step=0;step<12;step++){
-        const mid=(low+high)/2;sizeColumns(mid);
-        if(grid.scrollHeight*mid<=availableHeight)low=mid;else high=mid;
-      }
-      scale=Math.min(low,high);sizeColumns(scale);
-    }
-    const width=grid.scrollWidth,height=grid.scrollHeight;
-    scale=Math.min(scale??1,V.fitScale(width,height,availableWidth,availableHeight));
-    grid.style.transform=`scale(${scale})`;
-    frame.style.width=width*scale+8+'px';frame.style.height=height*scale+8+'px';
-    scroll.scrollTop=0;scroll.scrollLeft=0;
-    $('plate-scale-label').textContent=Math.round(scale*100)+'%';
+    scroll.style.height=Math.max(160,window.innerHeight-top-footer-20)+'px';
+    const rowHeight=(grid.clientHeight-22)/Number(grid.style.getPropertyValue('--rows'));
+    grid.classList.toggle('short-rows',rowHeight<62);
+    grid.querySelectorAll('.fit-label').forEach(label=>{
+      const name=label.querySelector('.fit-name'),recipe=label.querySelector('.fit-recipe');
+      if(!name)return;
+      const room=label.clientHeight-parseFloat(getComputedStyle(label).paddingTop)-(recipe?recipe.offsetHeight+2:0);
+      name.style.webkitLineClamp=Math.max(1,Math.min(3,Math.floor(room/parseFloat(getComputedStyle(name).lineHeight))));
+    });
+    $('plate-scale-label').textContent='Readable text';
   }
   window.addEventListener('resize',scheduleFit);
   const fitObserver=new ResizeObserver(scheduleFit);
@@ -120,7 +119,7 @@
     $('clear-wells').disabled=!names.length;$('lock-wells').disabled=!names.length;$('assign-selected').disabled=!names.length;
     $('inspect-well').disabled=!names.length;
     $('lock-wells').textContent=names.length&&[...selection].every(i=>p.locked.includes(i))?'Unlock wells':'Mark used';
-    $('mode-hint').textContent=mode?'Hover to preview · click a starting well · Esc to cancel':'Click a well to see its contents';
+    $('mode-hint').textContent=mode?'Hover to preview · click a starting well · Esc to cancel':display.fit?'Hover for full conditions · click to select':'Click a well to see its contents';
     $('place-mode').textContent=mode==='replicates'?'Cancel placement':'Place replicates →';
     const i=selection.size?[...selection].at(-1):null;
     if(i===null){$('well-details').innerHTML='<p class="eyebrow">WELL CONTENTS</p><h2>Select a well</h2><p class="muted">See every reagent and its volume here.</p>';return;}
@@ -174,6 +173,22 @@
   $('series-mode').onclick=()=>{try{spec();mode='series';plan(0);renderSelection();tell('Hover over the plate to preview the series. Each group gets the next tagged concentration; review reagent volumes for each group.');}catch(e){mode=null;tell(e.message,true);}};
   $('assign-selected').onclick=()=>{try{const s=spec();let idx;const ok=change(p=>{idx=M.condition(p,s,editIndex);M.assign(p,[...selection],idx,layer,tagValue(),$('tag-unit').value);delete p.draft;},'Condition applied to the selected wells.');if(ok)editCondition(idx);}catch(e){tell(e.message,true);}};
   const grid=$('plate-grid');
+  function peekWell(button){
+    const preview=$('well-preview');
+    if(!display.fit||mode||!button){preview.hidden=true;return;}
+    const c=M.cells(project(),layer)[Number(button.dataset.well)];
+    preview.innerHTML=V.wellContent(c,{...V.defaults,mode:'details'});preview.hidden=false;
+    const rect=button.getBoundingClientRect(),width=preview.offsetWidth,height=preview.offsetHeight;
+    const left=rect.right+10+width<window.innerWidth?rect.right+10:Math.max(12,rect.left-width-10);
+    preview.style.left=Math.min(left,Math.max(12,window.innerWidth-width-12))+'px';
+    preview.style.top=Math.max(12,Math.min(rect.top,window.innerHeight-height-12))+'px';
+  }
+  grid.addEventListener('pointerover',e=>peekWell(e.target.closest('[data-well]')));
+  grid.addEventListener('pointerleave',()=>{$('well-preview').hidden=true;});
+  grid.addEventListener('focusin',e=>peekWell(e.target.closest('[data-well]')));
+  grid.addEventListener('focusout',()=>{$('well-preview').hidden=true;});
+  document.addEventListener('keydown',e=>{if(e.key==='Escape')$('well-preview').hidden=true;});
+  window.addEventListener('scroll',()=>{$('well-preview').hidden=true;},{passive:true});
   grid.onpointerdown=e=>{const b=e.target.closest('[data-well]');if(!b||mode||e.button!==0)return;const i=+b.dataset.well;
     if(e.shiftKey&&anchor!==null)selection=new Set(M.rectangle(anchor,i,project().layout[0].Cols));
     else if(e.metaKey||e.ctrlKey){selection.has(i)?selection.delete(i):selection.add(i);anchor=i;}
@@ -201,7 +216,7 @@
   $('crop-plate').onchange=()=>{selection.clear();anchor=null;updateDisplay({...display,crop:$('crop-plate').checked});};
   $('print-layout').onchange=()=>updateDisplay({...display,print:$('print-layout').value});
   $('expand-plate').onclick=()=>updateDisplay({...display,wide:!display.wide});
-  $('fit-plate').onclick=()=>{if(!display.fit)$('display-options').open=false;updateDisplay({...display,fit:!display.fit});};
+  $('fit-plate').onclick=()=>{if(!display.fit)$('display-options').open=false;updateDisplay({...display,mode:'details',fit:!display.fit});};
   $('inspect-well').onclick=()=>{
     if(!selection.size)return;
     $('well-dialog-title').textContent='Well '+M.wellName([...selection].at(-1),project().layout[0].Cols);
@@ -212,12 +227,27 @@
   $('well-dialog-content').onclick=e=>{const b=e.target.closest('[data-edit-well]');if(b){$('well-dialog').close();editCondition(+b.dataset.editWell);}};
   function preparePrint(){
     document.body.classList.toggle('readable-print',display.print==='details');
+    document.body.classList.toggle('whole-plate-print',display.print==='plate');
     $('print-details').innerHTML=V.printSections(project(),layer,display);
+    $('print-whole').innerHTML=V.printWhole(project(),layer,display);
+    const frame=$('print-whole-frame'),grid=$('print-whole-grid');
+    if(frame.clientWidth&&grid.scrollWidth&&grid.scrollHeight){
+      const scale=Math.min(1,(frame.clientWidth-2)/grid.scrollWidth,(frame.clientHeight-2)/grid.scrollHeight);
+      grid.style.transform=`scale(${scale})`;
+    }
   }
   window.addEventListener('beforeprint',preparePrint);
   $('backup').onclick=()=>download(JSON.stringify({format:'plate-setup',version:1,project:project()},null,2),fileName()+'.plate.json');
   $('export-csv').onclick=()=>download(M.csv(project()),fileName()+'.csv','text/csv;charset=utf-8');
-  $('print').onclick=()=>{preparePrint();window.print();};
+  $('print').onclick=()=>{
+    $('export-readable').checked=display.print==='details';$('export-whole').checked=display.print==='plate';
+    preparePrint();$('export-dialog').showModal();
+  };
+  $('cancel-export').onclick=()=>$('export-dialog').close();
+  $('export-form').onsubmit=e=>{
+    e.preventDefault();updateDisplay({...display,print:$('export-whole').checked?'plate':'details'});
+    $('export-dialog').close();preparePrint();window.print();
+  };
   $('duplicate').onclick=()=>{const p=M.clone(project());p.id=M.id();p.title+=' (copy)';library.projects.unshift(p);navigate(p.id);tell('Created an independent copy, including recipes and used-well markings.');};
   $('new-plate').onclick=()=>{$('new-name').value='';$('new-dialog').showModal();$('new-name').focus();};
   $('cancel-new').onclick=()=>$('new-dialog').close();

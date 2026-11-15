@@ -12,7 +12,7 @@
     totals: 'Total and target volume',
     notes: 'Condition notes'
   };
-  const defaults = {mode:'details', width:240, font:13, wide:false, crop:false, fit:true, print:'details', fields:Object.fromEntries(Object.keys(fields).map(k=>[k,true]))};
+  const defaults = {mode:'details', width:240, font:13, wide:false, crop:false, fit:false, print:'details', fields:Object.fromEntries(Object.keys(fields).map(k=>[k,true]))};
   const escape = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const number = n => Number(n).toLocaleString(undefined,{maximumFractionDigits:6});
   function normalize(input = {}) {
@@ -31,6 +31,7 @@
   }
   function preset(mode, current = {}) {
     const next=normalize(current);next.mode=mode;
+    next.fit=mode==='overview';
     if(mode==='details') {next.fields={...defaults.fields};next.width=240;next.font=13;}
     if(mode==='contents') {next.fields={...defaults.fields,type:false,tagged:false,notes:false};next.width=200;next.font=12;}
     return normalize(next);
@@ -44,9 +45,30 @@
     }
     return {firstRow,lastRow,firstCol,lastCol};
   }
-  function fitScale(width, height, availableWidth, availableHeight) {
-    if (![width,height,availableWidth,availableHeight].every(n=>Number.isFinite(n)&&n>0)) return 1;
-    return Math.min(1,availableWidth/width,availableHeight/height);
+  function plateGroups(cells, plate, visible) {
+    const groups=[];
+    const same=(a,b)=>a.areaIndex!==null && a.areaIndex===b.areaIndex && a.value===b.value && a.unit===b.unit && a.locked===b.locked && a.rangeIndex===b.rangeIndex;
+    for(let row=visible.firstRow;row<=visible.lastRow;row++){
+      for(let col=visible.firstCol;col<=visible.lastCol;){
+        const first=cells[row*plate.Cols+col],members=[first],start=col++;
+        while(col<=visible.lastCol && same(first,cells[row*plate.Cols+col]))members.push(cells[row*plate.Cols+col++]);
+        groups.push({row,col:start,cells:members});
+      }
+    }
+    return groups;
+  }
+  function columnWeights(cells, plate, visible) {
+    const occupied=new Set(cells.filter(c=>c.area||c.value!==null||c.locked).map(c=>c.index%plate.Cols));
+    return Array.from({length:visible.lastCol-visible.firstCol+1},(_,i)=>!occupied.size||occupied.has(i+visible.firstCol)?1:0.25);
+  }
+  function readableContent(c, options) {
+    const o=normalize(options),f=o.fields,a=c.area,recipe=a?.SetupRecipe||[],meta=[];
+    if(!a && c.value===null && !c.locked)return '';
+    if(f.tagged && c.value!==null)meta.push(number(c.value)+' '+c.unit);
+    const t=M.recipeTotal(recipe);
+    if(f.totals && t.total!==null)meta.push(number(t.total)+' µL '+(t.complete?'total':'entered'));
+    const contents=recipe.map(r=>r.name+(f.volumes?' '+(r.volume===null?'(volume unknown)':number(r.volume)+' µL'):'')+(f.concentrations&&r.concentration?' ('+r.concentration+')':'')).join(' · ');
+    return `<span class="fit-name">${escape(a?(f.name?a.Name:'Condition '+(c.areaIndex+1)):c.value!==null?'Concentration only':'Used / locked').replaceAll(' | ',' · ')}</span>${meta.length?`<span class="fit-meta">${escape(meta.join(' · '))}</span>`:''}${contents&&(f.ingredients||f.volumes||f.concentrations)?`<span class="fit-recipe">${escape(contents)}</span>`:''}`;
   }
   function wellContent(c, options) {
     const o=normalize(options),f=o.fields,a=c.area,recipe=a?.SetupRecipe||[];
@@ -79,6 +101,19 @@
     }
     return out.join('');
   }
-  const api={fields,defaults,normalize,preset,bounds,fitScale,wellContent,printSections};
+  function printWhole(project, layer, options) {
+    const o=normalize(options),plate=project.layout[0],cells=M.cells(project,layer),b=bounds(cells,plate,o.crop);
+    let html='<span></span>';
+    for(let col=b.firstCol;col<=b.lastCol;col++)html+=`<span class="print-axis">${col+1}</span>`;
+    for(let row=b.firstRow;row<=b.lastRow;row++){
+      html+=`<span class="print-axis">${M.rowName(row)}</span>`;
+      for(let col=b.firstCol;col<=b.lastCol;col++){
+        const c=cells[row*plate.Cols+col];
+        html+=`<div class="print-export-well" style="--well-color:${/^#[0-9a-f]{6}$/i.test(c.area?.Color)?c.area.Color:'#ffffff'}">${wellContent(c,{...o,mode:'details'})}</div>`;
+      }
+    }
+    return `<header class="print-whole-title"><h2>${escape(project.title)}</h2><p>Layer ${layer+1} · ${M.wellName(b.firstRow*plate.Cols+b.firstCol,plate.Cols)}–${M.wellName(b.lastRow*plate.Cols+b.lastCol,plate.Cols)} · Volumes in µL; unrecorded volumes remain unknown.</p></header><div id="print-whole-frame"><div id="print-whole-grid" style="--cols:${b.lastCol-b.firstCol+1}">${html}</div></div>`;
+  }
+  const api={fields,defaults,normalize,preset,bounds,plateGroups,columnWeights,readableContent,wellContent,printSections,printWhole};
   if(typeof module!=='undefined' && module.exports)module.exports=api;else root.PlateSetupDisplay=api;
 })(globalThis);
