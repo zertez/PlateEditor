@@ -43,3 +43,17 @@ test('display preferences are bounded and independent of presets',()=>{
 test('notes and recipe data survive project backups',()=>{
  const p=example(),q=M.importProject({format:'plate-setup',version:1,project:p});assert.deepEqual(q.layout,p.layout);
 });
+test('fit scales the whole plate within both dimensions without stretching or enlarging',()=>{
+ for(const [w,h,aw,ah] of [[3000,2000,1200,500],[1500,3200,900,600],[900,500,280,200],[600,400,1200,900]]){
+   const scale=V.fitScale(w,h,aw,ah);
+   assert.ok(scale>0&&scale<=1);assert.ok(w*scale<=aw+1e-8);assert.ok(h*scale<=ah+1e-8);
+ }
+ assert.equal(V.fitScale(3000,2000,1200,500),0.25);
+ assert.equal(V.fitScale(600,400,1200,900),1);
+ assert.equal(V.fitScale(0,400,1200,900),1);
+});
+test('existing display preferences default to fitting and explicit actual-size choice persists across presets',()=>{
+ assert.equal(V.normalize({width:240,crop:true}).fit,true);
+ assert.equal(V.normalize({fit:false}).fit,false);
+ assert.equal(V.preset('details',{fit:false}).fit,false);
+});

@@ -43,6 +43,7 @@
     grid.style.setProperty('--cols',b.lastCol-b.firstCol+1);
     document.body.classList.toggle('contents-view',display.mode!=='overview');
     document.body.classList.toggle('expanded-plate',display.wide);
+    document.body.classList.toggle('fit-plate',display.fit);
     document.body.style.setProperty('--well-width',display.width+'px');
     document.body.style.setProperty('--well-font',display.font+'px');
     let html='<span class="axis-corner"></span>';
@@ -57,7 +58,7 @@
     }
     grid.innerHTML=html;
     $('display-summary').textContent=`${display.mode==='overview'?'Overview':'Unabridged well details · '+display.font+' px text'} · ${M.wellName(b.firstRow*plate.Cols+b.firstCol,plate.Cols)}–${M.wellName(b.lastRow*plate.Cols+b.lastCol,plate.Cols)}${display.crop?' · empty outer rows/columns hidden':''}`;
-    syncDisplayControls();
+    syncDisplayControls();scheduleFit();
   }
   function syncDisplayControls(){
     for(const [id,value] of [['view-compact','overview'],['view-contents','contents'],['view-details','details']]){
@@ -66,7 +67,46 @@
     Object.keys(V.fields).forEach(key=>{$('show-'+key).checked=display.fields[key];});
     $('well-width').value=display.width;$('well-font').value=display.font;$('crop-plate').checked=display.crop;$('print-layout').value=display.print;
     $('expand-plate').textContent=display.wide?'Show editing panels':'Expand plate view';$('expand-plate').setAttribute('aria-pressed',display.wide);
+    $('fit-plate').classList.toggle('active',display.fit);$('fit-plate').setAttribute('aria-pressed',display.fit);
   }
+  let fitFrame=0;
+  function scheduleFit(){cancelAnimationFrame(fitFrame);fitFrame=requestAnimationFrame(fitPlate);}
+  function fitPlate(){
+    const grid=$('plate-grid'),frame=$('plate-scale'),scroll=frame.parentElement;
+    if(!display.fit){
+      grid.style.transform='';grid.style.gridTemplateColumns='';frame.style.width='';frame.style.height='';scroll.style.height='';
+      $('plate-scale-label').textContent='Actual size';return;
+    }
+    // Use document coordinates so scrolling the page does not change the zoom.
+    const top=scroll.getBoundingClientRect().top+window.scrollY;
+    const footer=document.querySelector('.plate-card-bottom').offsetHeight;
+    scroll.style.height=Math.max(120,window.innerHeight-top-footer-24)+'px';
+    const style=getComputedStyle(scroll),paddingX=parseFloat(style.paddingLeft)+parseFloat(style.paddingRight),paddingY=parseFloat(style.paddingTop)+parseFloat(style.paddingBottom);
+    const availableWidth=Math.max(1,scroll.clientWidth-paddingX-8),availableHeight=Math.max(1,scroll.clientHeight-paddingY-8);
+    grid.style.gridTemplateColumns='';
+    let scale;
+    if(display.mode!=='overview'){
+      const columns=Number(grid.style.getPropertyValue('--cols')),gap=parseFloat(getComputedStyle(grid).columnGap),axis=28;
+      const sizeColumns=zoom=>{grid.style.gridTemplateColumns=`${axis}px repeat(${columns},${(availableWidth/zoom-axis-columns*gap)/columns}px)`;};
+      // Fill the width while finding the largest text scale that also fits every row.
+      // Simply scaling the tall original cells would leave most of the screen empty.
+      let low=0.001,high=Math.min(1,availableWidth/(axis+columns*(display.width+gap)));
+      for(let step=0;step<12;step++){
+        const mid=(low+high)/2;sizeColumns(mid);
+        if(grid.scrollHeight*mid<=availableHeight)low=mid;else high=mid;
+      }
+      scale=Math.min(low,high);sizeColumns(scale);
+    }
+    const width=grid.scrollWidth,height=grid.scrollHeight;
+    scale=Math.min(scale??1,V.fitScale(width,height,availableWidth,availableHeight));
+    grid.style.transform=`scale(${scale})`;
+    frame.style.width=width*scale+8+'px';frame.style.height=height*scale+8+'px';
+    scroll.scrollTop=0;scroll.scrollLeft=0;
+    $('plate-scale-label').textContent=Math.round(scale*100)+'%';
+  }
+  window.addEventListener('resize',scheduleFit);
+  const fitObserver=new ResizeObserver(scheduleFit);
+  for(const selector of ['main','.app-header','#display-options','.display-status','#notice','.plate-card-top','.plate-card-bottom','#plate-grid'])fitObserver.observe(document.querySelector(selector));
   function updateDisplay(next){
     display=V.normalize(next);
     try{localStorage.setItem(DISPLAY_KEY,JSON.stringify(display));}catch(e){tell('Display settings could not be saved in this browser.',true);}
@@ -78,6 +118,7 @@
     const names=[...selection].sort((a,b)=>a-b).map(i=>M.wellName(i,p.layout[0].Cols));
     $('selection-label').textContent=names.length?`${names.length} selected · ${names.slice(0,5).join(', ')}${names.length>5?'…':''}`:'No wells selected';
     $('clear-wells').disabled=!names.length;$('lock-wells').disabled=!names.length;$('assign-selected').disabled=!names.length;
+    $('inspect-well').disabled=!names.length;
     $('lock-wells').textContent=names.length&&[...selection].every(i=>p.locked.includes(i))?'Unlock wells':'Mark used';
     $('mode-hint').textContent=mode?'Hover to preview · click a starting well · Esc to cancel':'Click a well to see its contents';
     $('place-mode').textContent=mode==='replicates'?'Cancel placement':'Place replicates →';
@@ -160,6 +201,15 @@
   $('crop-plate').onchange=()=>{selection.clear();anchor=null;updateDisplay({...display,crop:$('crop-plate').checked});};
   $('print-layout').onchange=()=>updateDisplay({...display,print:$('print-layout').value});
   $('expand-plate').onclick=()=>updateDisplay({...display,wide:!display.wide});
+  $('fit-plate').onclick=()=>{if(!display.fit)$('display-options').open=false;updateDisplay({...display,fit:!display.fit});};
+  $('inspect-well').onclick=()=>{
+    if(!selection.size)return;
+    $('well-dialog-title').textContent='Well '+M.wellName([...selection].at(-1),project().layout[0].Cols);
+    $('well-dialog-content').innerHTML=$('well-details').innerHTML;
+    $('well-dialog').showModal();
+  };
+  $('close-well-dialog').onclick=()=>$('well-dialog').close();
+  $('well-dialog-content').onclick=e=>{const b=e.target.closest('[data-edit-well]');if(b){$('well-dialog').close();editCondition(+b.dataset.editWell);}};
   function preparePrint(){
     document.body.classList.toggle('readable-print',display.print==='details');
     $('print-details').innerHTML=V.printSections(project(),layer,display);

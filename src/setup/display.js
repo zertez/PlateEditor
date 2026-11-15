@@ -12,7 +12,7 @@
     totals: 'Total and target volume',
     notes: 'Condition notes'
   };
-  const defaults = {mode:'details', width:240, font:13, wide:false, crop:false, print:'details', fields:Object.fromEntries(Object.keys(fields).map(k=>[k,true]))};
+  const defaults = {mode:'details', width:240, font:13, wide:false, crop:false, fit:true, print:'details', fields:Object.fromEntries(Object.keys(fields).map(k=>[k,true]))};
   const escape = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const number = n => Number(n).toLocaleString(undefined,{maximumFractionDigits:6});
   function normalize(input = {}) {
@@ -24,6 +24,7 @@
       font:inRange(input.font,10,18,defaults.font),
       wide:input.wide === true,
       crop:input.crop === true,
+      fit:typeof input.fit === 'boolean'?input.fit:defaults.fit,
       print:input.print === 'plate'?'plate':'details',
       fields:Object.fromEntries(Object.keys(fields).map(k=>[k,typeof input.fields?.[k]==='boolean'?input.fields[k]:true]))
     };
@@ -42,6 +43,10 @@
       firstRow=Math.min(...rows);lastRow=Math.max(...rows);firstCol=Math.min(...cols);lastCol=Math.max(...cols);
     }
     return {firstRow,lastRow,firstCol,lastCol};
+  }
+  function fitScale(width, height, availableWidth, availableHeight) {
+    if (![width,height,availableWidth,availableHeight].every(n=>Number.isFinite(n)&&n>0)) return 1;
+    return Math.min(1,availableWidth/width,availableHeight/height);
   }
   function wellContent(c, options) {
     const o=normalize(options),f=o.fields,a=c.area,recipe=a?.SetupRecipe||[];
@@ -74,6 +79,6 @@
     }
     return out.join('');
   }
-  const api={fields,defaults,normalize,preset,bounds,wellContent,printSections};
+  const api={fields,defaults,normalize,preset,bounds,fitScale,wellContent,printSections};
   if(typeof module!=='undefined' && module.exports)module.exports=api;else root.PlateSetupDisplay=api;
 })(globalThis);
