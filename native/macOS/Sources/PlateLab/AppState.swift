@@ -46,7 +46,7 @@ import UniformTypeIdentifiers
             let aliquots=try container.mainContext.fetch(FetchDescriptor<Aliquot>())
             func cell(_ string: String) -> String { let safe=["=","+","-","@"].contains(String(string.prefix(1))) ? "'"+string : string;return "\""+safe.replacingOccurrences(of:"\"",with:"\"\"")+"\"" }
             var rows=[["Tube ID","Protein","Variant","Batch","Remaining µL","Concentration mg/mL","Protein remaining µg","Starting thaw count","Recorded thaws","Current state","Location","Archived","Notes"]]
-            rows += aliquots.sorted { $0.label < $1.label }.map { a in [a.label,a.batch?.name ?? "",a.batch?.variant ?? "",a.batch?.batchLabel ?? "",String(a.remainingUL),a.concentrationMgML.map(String.init(describing:)) ?? "",a.massUG.map(String.init(describing:)) ?? "",a.startingThawCount.map(String.init) ?? "Unknown",String(a.recordedThaws),a.state.rawValue,a.location,a.archived ? "Yes":"No",a.notes] }
+            rows += aliquots.sorted { $0.label < $1.label }.map { a in [a.label,a.batch?.name ?? "",a.batch?.variant ?? "",a.batch?.batchLabel ?? "",a.remainingUL.map { String($0) } ?? "Unknown",a.concentrationMgML.map(String.init(describing:)) ?? "",a.massUG.map(String.init(describing:)) ?? "",a.startingThawCount.map(String.init) ?? "Unknown",String(a.recordedThaws),a.state.rawValue,a.location,a.archived ? "Yes":"No",a.notes] }
             try saveFile(data:Data(rows.map { $0.map(cell).joined(separator:",") }.joined(separator:"\r\n").utf8),suggestedName:"PlateLab-samples.csv",type:.commaSeparatedText)
         } catch { self.error=error.localizedDescription }
     }

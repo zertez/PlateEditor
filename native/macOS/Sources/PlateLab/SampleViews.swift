@@ -28,14 +28,14 @@ struct SampleLibraryView: View {
             if batches.isEmpty {
                 ContentUnavailableView { Label("Start your sample library",systemImage:"testtube.2") } description: { Text("Create a protein batch, then register each aliquot with its remaining volume and known thaw history.") } actions: { Button("New protein batch") { addBatch=true }.buttonStyle(.borderedProminent) }
             } else {
-                HSplitView {
+                HStack(alignment:.top,spacing:0) {
                     VStack(alignment:.leading,spacing:0) {
                         if matching.isEmpty {
                             ContentUnavailableView("No aliquots yet",systemImage:"testtube.2",description:Text("Add a tube from one of your \(batches.count) protein batches, or adjust the filter."))
                         } else {
                             List(matching,selection:$selected) { a in
                                 VStack(alignment:.leading,spacing:7) {
-                                    HStack { Text(a.label).font(.headline);Spacer();Text("\(number(a.remainingUL)) µL").monospacedDigit().fontWeight(.semibold) }
+                                    HStack { Text(a.label).font(.headline);Spacer();Text(volumeLabel(a.remainingUL)).monospacedDigit().fontWeight(.semibold) }
                                     Text(a.batch?.title ?? "Unlinked batch").font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
                                     HStack { Label(a.state.rawValue,systemImage:a.state == .frozen ? "snowflake":"drop");Spacer();Text(a.archived ? "Archived":"\(a.thawLabel) thaws") }.font(.caption).foregroundStyle(.secondary)
                                 }.padding(.vertical,7).tag(a.id)
@@ -43,10 +43,11 @@ struct SampleLibraryView: View {
                         }
                         Divider()
                         Text("\(batches.count) batches · \(matching.count) aliquots shown").font(.caption).foregroundStyle(.secondary).padding(12)
-                    }.frame(minWidth:275,idealWidth:340,maxWidth:420)
-                    if let current { AliquotDetail(aliquot:current).id(current.id).frame(minWidth:420) }
-                    else { ContentUnavailableView("Select an aliquot",systemImage:"sidebar.left",description:Text("Inspect quantities, storage, and a dated history. Unknown thaw counts stay unknown.")).frame(minWidth:420,maxWidth:.infinity) }
-                }
+                    }.frame(width:320).frame(maxHeight:.infinity)
+                    Divider()
+                    if let current { AliquotDetail(aliquot:current).id(current.id).frame(minWidth:420,maxWidth:.infinity,maxHeight:.infinity) }
+                    else { ContentUnavailableView("Select an aliquot",systemImage:"sidebar.left",description:Text("Inspect quantities, storage, and a dated history. Unknown thaw counts stay unknown.")).frame(minWidth:420,maxWidth:.infinity,maxHeight:.infinity) }
+                }.frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.topLeading)
             }
         }
         .sheet(isPresented:$addBatch) { BatchForm() }
@@ -68,13 +69,13 @@ struct AliquotDetail: View {
                     Menu { Button(aliquot.archived ? "Restore aliquot":"Archive aliquot") { aliquot.archived.toggle();do { try Inventory.save(context) } catch { app.error=error.localizedDescription } };Button("Edit protein batch") { editBatch=true } } label: { Image(systemName:"ellipsis.circle").font(.title2) }.menuStyle(.borderlessButton).fixedSize()
                 }
                 HStack(spacing:12) {
-                    Metric(title:"Remaining",value:"\(number(aliquot.remainingUL)) µL")
+                    Metric(title:"Remaining",value:volumeLabel(aliquot.remainingUL))
                     Metric(title:"Thaws",value:aliquot.thawLabel)
                     Metric(title:"State",value:aliquot.state.rawValue)
                 }
                 Grid(alignment:.leading,horizontalSpacing:20,verticalSpacing:10) {
                     info("Concentration",aliquot.concentrationMgML.map { "\(number($0)) mg/mL" } ?? "Not recorded")
-                    info("Protein remaining",aliquot.massUG.map { "\(number($0)) µg" } ?? "Unknown concentration")
+                    info("Protein remaining",aliquot.massUG.map { "\(number($0)) µg" } ?? "Unknown volume or concentration")
                     info("Location",aliquot.location.isEmpty ? "Not recorded":aliquot.location)
                     info("Buffer",aliquot.batch?.buffer.isEmpty == false ? aliquot.batch!.buffer:"Not recorded")
                     if let date=aliquot.batch?.preparedOn { info("Prepared",date.formatted(date:.abbreviated,time:.omitted)) }
@@ -83,7 +84,7 @@ struct AliquotDetail: View {
                 if let note=aliquot.batch?.notes,!note.isEmpty { Text(note).font(.subheadline).foregroundStyle(.secondary).textSelection(.enabled) }
                 if aliquot.startingThawCount==nil { Text("Earlier thaw history is unknown. The count includes only events recorded after registration.").font(.caption).foregroundStyle(.secondary) }
                 HStack {
-                    Button("Record withdrawal") { action = .withdrawal }.buttonStyle(.borderedProminent).disabled(aliquot.remainingUL<=0)
+                    Button("Record withdrawal") { action = .withdrawal }.buttonStyle(.borderedProminent).disabled((aliquot.remainingUL ?? 0)<=0)
                     Button("Mark thawed") { action = .thaw }.disabled(aliquot.state != .frozen)
                     Button("Mark frozen") { action = .freeze }.disabled(aliquot.state == .frozen)
                 }.disabled(aliquot.archived)
@@ -92,7 +93,8 @@ struct AliquotDetail: View {
                 Text("History").font(.title3.bold())
                 ForEach(aliquot.orderedEvents.reversed()) { event in
                     VStack(alignment:.leading,spacing:5) {
-                        HStack { Text(event.kind).fontWeight(.semibold);Spacer();Text(event.date.formatted(date:.abbreviated,time:.shortened)).font(.caption).foregroundStyle(.secondary) }
+                        HStack { Text(event.kind).fontWeight(.semibold);Spacer();Text(event.date.map { $0.formatted(date:.abbreviated,time:event.dateOnly ? .omitted:.shortened) } ?? "Date not recorded").font(.caption).foregroundStyle(.secondary) }
+                        if let after=event.volumeAfterUL { Text("Remaining volume recorded: \(volumeLabel(after))") }
                         if event.volumeDeltaUL != 0 { Text("\(event.volumeDeltaUL>0 ? "+":"")\(number(event.volumeDeltaUL)) µL").monospacedDigit() }
                         if let location=event.newLocation { Text(location) }
                         if !event.experiment.isEmpty { Label(event.experiment,systemImage:"square.grid.3x3").font(.subheadline) }
@@ -102,7 +104,7 @@ struct AliquotDetail: View {
                 }
                 VStack(alignment:.leading,spacing:5) {
                     Text("Registered").fontWeight(.semibold)
-                    Text("\(number(aliquot.startingVolumeUL)) µL · \(aliquot.initialState) · Starting thaws: \(aliquot.startingThawCount.map(String.init) ?? "unknown")")
+                    Text("\(volumeLabel(aliquot.startingVolumeUL)) · \(aliquot.initialState) · Starting thaws: \(aliquot.startingThawCount.map(String.init) ?? "unknown")")
                     Text(aliquot.createdAt.formatted(date:.abbreviated,time:.shortened)).font(.caption).foregroundStyle(.secondary)
                 }.font(.subheadline)
             }.padding(24)

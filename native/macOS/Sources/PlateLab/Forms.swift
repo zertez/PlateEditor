@@ -53,7 +53,7 @@ struct AliquotForm: View {
             Form {
                 Picker("Protein batch",selection:$batchID) { Text("Choose a batch").tag(nil as UUID?);ForEach(batches) { Text($0.title).tag(Optional($0.id)) } }
                 TextField("Unique tube ID",text:$label,prompt:Text("e.g. CSE-01-A"))
-                TextField("Volume now remaining (µL)",text:$volume)
+                TextField("Volume now remaining (µL)",text:$volume,prompt:Text("Leave blank if unknown"))
                 TextField("This tube’s concentration (mg/mL)",text:$concentration,prompt:Text("Leave blank if unknown"))
                 Picker("Current state",selection:$state) { ForEach(StorageState.allCases) { Text($0.rawValue).tag($0) } }
                 TextField("Previous thaw count",text:$thawCount,prompt:Text("Leave blank if unknown; 0 means known zero"))
@@ -69,7 +69,7 @@ struct AliquotForm: View {
     private func save() {
         do {
             guard let batch=batches.first(where:{$0.id==batchID}) else { throw LabError("Choose a protein batch.") }
-            let v=try quantity(volume,name:"volume")!,c=try quantity(concentration,name:"concentration",optional:true)
+            let v=try quantity(volume,name:"volume",optional:true),c=try quantity(concentration,name:"concentration",optional:true)
             let count: Int?
             if clean(thawCount).isEmpty { count=nil } else { guard let n=Int(clean(thawCount)),n>=0 else { throw LabError("Thaw count must be a whole number, or blank if unknown.") };count=n }
             let a=Aliquot(label:label,volume:v,concentration:c,thawCount:count,state:state,location:clean(location),notes:clean(notes))
@@ -89,7 +89,7 @@ struct EventForm: View {
     var body: some View {
         VStack(alignment:.leading,spacing:18) {
             Text(kind == .withdrawal ? "Record completed withdrawal":kind.rawValue).font(.title2.bold())
-            Text("\(aliquot.label) · \(number(aliquot.remainingUL)) µL remaining").foregroundStyle(.secondary)
+            Text("\(aliquot.label) · \(volumeLabel(aliquot.remainingUL)) remaining").foregroundStyle(.secondary)
             Form {
                 if kind == .withdrawal { TextField("Total volume actually transferred (µL)",text:$amount);TextField("Experiment / plate",text:$experiment) }
                 if kind == .volumeCorrection { TextField("Correct remaining volume (µL)",text:$amount) }
@@ -121,7 +121,7 @@ struct TransferPicker: View {
     let plateID: String?
     let plateTitle: String
     let wells: [String]
-    var available: [Aliquot] { aliquots.filter { !$0.archived && $0.remainingUL>0 }.sorted { $0.label < $1.label } }
+    var available: [Aliquot] { aliquots.filter { !$0.archived && ($0.remainingUL ?? 0)>0 }.sorted { $0.label < $1.label } }
     var body: some View {
         if let a=available.first(where:{$0.id==choice}) { EventForm(aliquot:a,kind:.withdrawal,plateID:plateID,plateTitle:plateTitle,wellNames:wells) }
         else {
@@ -129,7 +129,7 @@ struct TransferPicker: View {
                 Text("Choose the source aliquot").font(.title2.bold())
                 Text(plateTitle).foregroundStyle(.secondary)
                 if available.isEmpty { Text("Register a protein batch and aliquot in Samples first.") }
-                else { ScrollView { VStack(spacing:8) { ForEach(available) { a in Button { choice=a.id } label: { HStack { Text(a.label);Text(a.batch?.name ?? "").foregroundStyle(.secondary);Spacer();Text("\(number(a.remainingUL)) µL") }.padding(6) } } }.padding(2) }.frame(maxHeight:400) }
+                else { ScrollView { VStack(spacing:8) { ForEach(available) { a in Button { choice=a.id } label: { HStack { Text(a.label);Text(a.batch?.name ?? "").foregroundStyle(.secondary);Spacer();Text(volumeLabel(a.remainingUL)) }.padding(6) } } }.padding(2) }.frame(maxHeight:400) }
                 HStack { Spacer();Button("Cancel",role:.cancel) { dismiss() } }
             }.padding(24).frame(width:560).frame(maxHeight:600)
         }

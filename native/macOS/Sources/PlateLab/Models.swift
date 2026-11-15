@@ -15,6 +15,7 @@ struct LabError: LocalizedError {
     var errorDescription: String? { message }
 }
 func number(_ value: Double) -> String { value.formatted(.number.precision(.fractionLength(0...4))) }
+func volumeLabel(_ value: Double?) -> String { value.map { "\(number($0)) µL" } ?? "Unknown volume" }
 func clean(_ text: String) -> String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
 func quantity(_ text: String, name: String, optional: Bool = false) throws -> Double? {
     if clean(text).isEmpty && optional { return nil }
@@ -44,7 +45,7 @@ func quantity(_ text: String, name: String, optional: Bool = false) throws -> Do
 @Model final class Aliquot {
     @Attribute(.unique) var id: UUID
     var label: String
-    var startingVolumeUL: Double
+    var startingVolumeUL: Double?
     var concentrationMgML: Double?
     var startingThawCount: Int?
     var initialState: String
@@ -54,25 +55,31 @@ func quantity(_ text: String, name: String, optional: Bool = false) throws -> Do
     var createdAt: Date
     var batch: ProteinBatch?
     @Relationship(deleteRule: .cascade, inverse: \SampleEvent.aliquot) var events: [SampleEvent] = []
-    init(id: UUID = UUID(), label: String, volume: Double, concentration: Double?, thawCount: Int?, state: StorageState, location: String, notes: String = "", createdAt: Date = Date()) {
+    init(id: UUID = UUID(), label: String, volume: Double?, concentration: Double?, thawCount: Int?, state: StorageState, location: String, notes: String = "", createdAt: Date = Date()) {
         self.id=id; self.label=label; self.startingVolumeUL=volume; self.concentrationMgML=concentration
         self.startingThawCount=thawCount; self.initialState=state.rawValue; self.initialLocation=location
         self.notes=notes; self.archived=false; self.createdAt=createdAt
     }
     var orderedEvents: [SampleEvent] { events.sorted { $0.sequence < $1.sequence } }
-    var remainingUL: Double { max(0, orderedEvents.reduce(startingVolumeUL) { $0 + $1.volumeDeltaUL }) }
+    var remainingUL: Double? {
+        orderedEvents.reduce(startingVolumeUL) { balance, event in
+            event.volumeAfterUL ?? balance.map { max(0, $0 + event.volumeDeltaUL) }
+        }
+    }
     var recordedThaws: Int { events.filter { $0.kind == EventKind.thaw.rawValue }.count }
     var thawLabel: String { startingThawCount.map { String($0 + recordedThaws) } ?? "Unknown + \(recordedThaws) recorded" }
     var state: StorageState { StorageState(rawValue: orderedEvents.last(where: { $0.newState != nil })?.newState ?? initialState) ?? .unknown }
     var location: String { orderedEvents.last(where: { $0.newLocation != nil })?.newLocation ?? initialLocation }
-    var massUG: Double? { concentrationMgML.map { $0 * remainingUL } }
+    var massUG: Double? { guard let concentrationMgML, let remainingUL else { return nil };return concentrationMgML * remainingUL }
 }
 @Model final class SampleEvent {
     @Attribute(.unique) var id: UUID
     var sequence: Int
-    var date: Date
+    var date: Date?
+    var dateOnly: Bool = false
     var kind: String
     var volumeDeltaUL: Double
+    var volumeAfterUL: Double?
     var newState: String?
     var newLocation: String?
     var notes: String
@@ -80,8 +87,9 @@ func quantity(_ text: String, name: String, optional: Bool = false) throws -> Do
     var plateID: String?
     var wells: String
     var aliquot: Aliquot?
-    init(id: UUID = UUID(), sequence: Int, date: Date = Date(), kind: EventKind, delta: Double = 0, state: StorageState? = nil, location: String? = nil, notes: String = "", experiment: String = "", plateID: String? = nil, wells: String = "") {
+    init(id: UUID = UUID(), sequence: Int, date: Date? = Date(), dateOnly: Bool = false, kind: EventKind, delta: Double = 0, volumeAfter: Double? = nil, state: StorageState? = nil, location: String? = nil, notes: String = "", experiment: String = "", plateID: String? = nil, wells: String = "") {
         self.id=id; self.sequence=sequence; self.date=date; self.kind=kind.rawValue; self.volumeDeltaUL=delta
+        self.dateOnly=dateOnly;self.volumeAfterUL=volumeAfter
         self.newState=state?.rawValue; self.newLocation=location; self.notes=notes; self.experiment=experiment; self.plateID=plateID; self.wells=wells
     }
 }
@@ -94,7 +102,8 @@ func quantity(_ text: String, name: String, optional: Bool = false) throws -> Do
         try save(context)
     }
     static func addAliquot(_ aliquot: Aliquot, to batch: ProteinBatch, in context: ModelContext) throws {
-        guard !clean(aliquot.label).isEmpty, aliquot.startingVolumeUL.isFinite, aliquot.startingVolumeUL >= 0 else { throw LabError("Enter a tube ID and a non-negative starting volume.") }
+        guard !clean(aliquot.label).isEmpty else { throw LabError("Enter a tube ID.") }
+        if let volume=aliquot.startingVolumeUL, !volume.isFinite || volume<0 { throw LabError("Enter a non-negative volume, or leave it blank if unknown.") }
         guard aliquot.startingThawCount == nil || aliquot.startingThawCount! >= 0 else { throw LabError("Thaw count cannot be negative.") }
         if let c=aliquot.concentrationMgML, !c.isFinite || c < 0 { throw LabError("Invalid concentration.") }
         let all=try context.fetch(FetchDescriptor<Aliquot>())
@@ -104,15 +113,16 @@ func quantity(_ text: String, name: String, optional: Bool = false) throws -> Do
     }
     static func record(_ kind: EventKind, for aliquot: Aliquot, amount: Double? = nil, location: String = "", notes: String = "", experiment: String = "", plateID: String? = nil, wells: String = "", in context: ModelContext) throws {
         guard !aliquot.archived else { throw LabError("Restore this aliquot before recording an event.") }
-        var delta=0.0; var state: StorageState?; var newLocation: String?
+        var delta=0.0; var state: StorageState?; var newLocation: String?;var volumeAfter: Double?
         switch kind {
         case .withdrawal:
             guard let amount, amount.isFinite, amount > 0 else { throw LabError("Enter the volume actually transferred in µL.") }
-            guard amount <= aliquot.remainingUL else { throw LabError("Only \(number(aliquot.remainingUL)) µL remains in this aliquot.") }
+            guard let remaining=aliquot.remainingUL else { throw LabError("The remaining volume is unknown. Record a measured volume before withdrawing.") }
+            guard amount <= remaining else { throw LabError("Only \(number(remaining)) µL remains in this aliquot.") }
             delta = -amount
         case .volumeCorrection:
             guard let amount, amount.isFinite, amount >= 0, !clean(notes).isEmpty else { throw LabError("Enter the corrected remaining volume and a reason for the correction.") }
-            delta=amount-aliquot.remainingUL
+            if let remaining=aliquot.remainingUL { delta=amount-remaining } else { volumeAfter=amount }
         case .thaw:
             guard aliquot.state == .frozen else { throw LabError("Only a currently frozen aliquot can be marked thawed. Its starting state may be unknown.") }
             state = .thawed
@@ -123,7 +133,7 @@ func quantity(_ text: String, name: String, optional: Bool = false) throws -> Do
             guard !clean(location).isEmpty else { throw LabError("Enter the new storage location.") }
             newLocation=clean(location)
         }
-        let event=SampleEvent(sequence:(aliquot.events.map(\.sequence).max() ?? 0)+1,kind:kind,delta:delta,state:state,location:newLocation,notes:clean(notes),experiment:clean(experiment),plateID:plateID,wells:wells)
+        let event=SampleEvent(sequence:(aliquot.events.map(\.sequence).max() ?? 0)+1,kind:kind,delta:delta,volumeAfter:volumeAfter,state:state,location:newLocation,notes:clean(notes),experiment:clean(experiment),plateID:plateID,wells:wells)
         context.insert(event); event.aliquot=aliquot
         try save(context)
     }

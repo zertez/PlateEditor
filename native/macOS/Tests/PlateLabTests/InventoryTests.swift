@@ -3,6 +3,53 @@ import SwiftData
 @testable import PlateLab
 
 final class InventoryTests: XCTestCase {
+    @MainActor func testUnknownVolumeCanBeMeasuredWithoutInventingAnOpeningBalance() throws {
+        let (app,batch,_)=try fixture();let context=app.container.mainContext
+        let a=Aliquot(label:"Unknown-volume",volume:nil,concentration:2,thawCount:0,state:.unknown,location:"")
+        try Inventory.addAliquot(a,to:batch,in:context)
+        XCTAssertNil(a.remainingUL);XCTAssertNil(a.massUG)
+        XCTAssertThrowsError(try Inventory.record(.withdrawal,for:a,amount:1,in:context))
+        try Inventory.record(.freeze,for:a,in:context)
+        XCTAssertNil(a.remainingUL)
+        try Inventory.record(.volumeCorrection,for:a,amount:50,notes:"Measured today",in:context)
+        XCTAssertNil(a.startingVolumeUL);XCTAssertEqual(a.remainingUL,50)
+        XCTAssertEqual(a.orderedEvents.last?.volumeAfterUL,50)
+        try Inventory.record(.withdrawal,for:a,amount:10,in:context)
+        XCTAssertEqual(a.remainingUL,40);XCTAssertEqual(a.massUG,80)
+        let backup=SampleBackup(batches:[batch]);try backup.validate()
+        let target=try AppState(directory:FileManager.default.temporaryDirectory,memory:true)
+        XCTAssertEqual(try JSONDecoder().decode(SampleBackup.self,from:backup.data()).merge(into:target.container.mainContext),1)
+        XCTAssertEqual(SampleBackup(batches:try target.container.mainContext.fetch(FetchDescriptor<ProteinBatch>())).batches,backup.batches)
+    }
+    @MainActor func testHistoricalDatesAndOldBackupsRemainSupported() throws {
+        let (app,batch,a)=try fixture();let context=app.container.mainContext
+        let undated=SampleEvent(sequence:1,date:nil,kind:.withdrawal,delta:-1.5,notes:"Undated historical use")
+        context.insert(undated);undated.aliquot=a
+        let dated=SampleEvent(sequence:2,date:Date(timeIntervalSinceReferenceDate:100000),dateOnly:true,kind:.withdrawal,delta:-2)
+        context.insert(dated);dated.aliquot=a;try Inventory.save(context)
+        let backup=SampleBackup(batches:[batch]);try backup.validate()
+        let decoded=try JSONDecoder().decode(SampleBackup.self,from:backup.data())
+        XCTAssertNil(decoded.batches[0].aliquots[0].events[0].date)
+        XCTAssertEqual(decoded.batches[0].aliquots[0].events[1].dateOnly,true)
+        let oldSource=try fixture()
+        var old=SampleBackup(batches:[oldSource.1]);old.version=1
+        let target=try AppState(directory:FileManager.default.temporaryDirectory,memory:true)
+        XCTAssertEqual(try old.merge(into:target.container.mainContext),1)
+    }
+    @MainActor func testLocalMigrationAndWorkbookImportWhenRequested() throws {
+        guard let directory=ProcessInfo.processInfo.environment["PLATELAB_MIGRATION_DIRECTORY"],let file=ProcessInfo.processInfo.environment["PLATELAB_IMPORT_CHECK"] else { throw XCTSkip("Set local fixture paths to check an existing database migration and import.") }
+        let app=try AppState(directory:URL(fileURLWithPath:directory))
+        let old=try app.container.mainContext.fetch(FetchDescriptor<Aliquot>())
+        XCTAssertFalse(old.isEmpty)
+        let previous=SampleBackup(batches:try app.container.mainContext.fetch(FetchDescriptor<ProteinBatch>())).batches
+        let backup=try JSONDecoder().decode(SampleBackup.self,from:Data(contentsOf:URL(fileURLWithPath:file)))
+        let before=old.count
+        XCTAssertEqual(try backup.merge(into:app.container.mainContext),backup.batches.count)
+        XCTAssertEqual(try backup.merge(into:app.container.mainContext),0)
+        XCTAssertEqual(try app.container.mainContext.fetchCount(FetchDescriptor<Aliquot>()),before+backup.batches.reduce(0) { $0+$1.aliquots.count })
+        XCTAssertEqual(SampleBackup(batches:try app.container.mainContext.fetch(FetchDescriptor<ProteinBatch>())).batches.filter { backup.batches.map(\.id).contains($0.id) },backup.batches)
+        XCTAssertEqual(SampleBackup(batches:try app.container.mainContext.fetch(FetchDescriptor<ProteinBatch>())).batches.filter { previous.map(\.id).contains($0.id) },previous)
+    }
     @MainActor func fixture() throws -> (AppState, ProteinBatch, Aliquot) {
         let app=try AppState(directory:FileManager.default.temporaryDirectory,memory:true)
         let batch=ProteinBatch(name:"Demo protein",variant:"Test only",concentration:2,buffer:"Test buffer")

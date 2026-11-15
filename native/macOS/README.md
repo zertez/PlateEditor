@@ -21,6 +21,8 @@ Set `NODE_BIN` if Node is not on your PATH. The script creates `dist/PlateLab.ap
 
 An aliquot inherits the batch concentration at registration and keeps its own concentration snapshot. Remaining protein mass is calculated as volume (µL) × concentration (mg/mL), in µg. Each tube has independent volume and thaw history. Marking a frozen tube thawed adds one thaw; refreezing does not add another. Unknown previous history stays unknown.
 
+Leave the volume blank when it is unknown. The app preserves that distinction from zero and requires a measured volume before recording withdrawals. Use **Correct volume** with a reason to establish the first known balance. Imported history can retain undated events or dates without an invented time. Sample backup version 2 preserves these fields; version 1 backups remain readable.
+
 ## Plates and sample usage
 
 The Plates tab retains the compact plate overview, compact hover details, recipes, volumes, layout import, and detailed print/export settings. Import an existing `.save` or `.plate.json` once; subsequent edits save automatically on this Mac. The Mac library is separate from your browser library. Browser-only recipes need a `.plate.json` backup to transfer them completely.
