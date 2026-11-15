@@ -1,3 +1,11 @@
+# PlateEditor — visual plate setup
+
+This fork adds an intuitive plate workspace with per-condition reagent recipes, volumes and totals, replicate placement, used-well protection, undo/redo, and a browser-local plate library. Existing `.save` layouts can be imported once and then opened from the library.
+
+**Start here:** [Plate Setup instructions](SETUP.md). On macOS, double-click `Start Plate Setup.command`. For original-editor analysis, first run `node scripts/build.mjs`. The original PlateEditor implementation and MIT license are retained.
+
+---
+
 # PlateEditor
 
 PlateEditor is a free web application to work with multi-well plates, from creation of layouts to data visualization and aggregation.
