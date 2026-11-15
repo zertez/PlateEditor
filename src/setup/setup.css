@@ -2,3 +2,75 @@
 @media print{@page{size:landscape;margin:12mm}.app-header,.library,.inspector,.work-toolbar,.below-plate,.plate-title>button,.plate-card-bottom button,.section-heading>button,#notice{display:none!important}.app-shell{display:block}main{padding:0}.plate-scroll{overflow:visible}.plate-card{overflow:visible;border:none;box-shadow:none}#plate-grid,.contents-view #plate-grid{min-width:0;grid-template-columns:22px repeat(var(--cols),1fr);gap:3px}.well{min-height:35px;font-size:8px;print-color-adjust:exact}.contents-view .well{padding:4px;min-height:60px}.well-recipe,.well-title,.contents-view .well-recipe{font-size:6px}.plate-title{margin-bottom:10px}.conditions-panel{margin-top:20px;break-inside:auto}.condition-row{break-inside:avoid}.print-footer{display:block;font-size:9px;margin-top:20px}.plate-card-top{padding-left:0}#project-title{font-size:20px}#project-notes{border:0}.conditions-panel .muted{display:none}.condition-label small{color:#34463e}}
 
 .well-dose{max-width:100%;overflow:hidden;overflow-wrap:anywhere;line-height:1.2}.well{min-height:51px}.inspector{position:sticky;top:0;height:100vh;overflow-y:auto;align-self:start}.library{position:sticky;top:0;max-height:100vh;overflow-y:auto;align-self:start}.contents-view .plate-scroll{max-height:70vh}.condition-label small{overflow-wrap:anywhere}@media(max-width:1150px){.inspector{position:static;height:auto;overflow:visible}.library{max-height:none;position:static}}@media print{.inspector,.library{display:none!important}.contents-view .plate-scroll{max-height:none}.well-dose{overflow:visible}}
+
+/* Configurable, unabridged well contents. */
+.display-options{border:1px solid var(--line);border-radius:9px;background:#fff;margin:0 0 10px}
+.display-options>summary{padding:12px 15px;font-size:12px;font-weight:600;color:var(--green)}
+.display-options-body{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(190px,1fr);gap:22px;padding:4px 16px 14px}
+.display-options fieldset{min-width:0;border:0;padding:0;margin:0}
+.display-options legend{font-size:11px;font-weight:600;margin-bottom:12px}
+.display-fields{display:grid;grid-template-columns:1fr 1fr;gap:5px 10px}
+.check-label{display:flex;flex-direction:row;align-items:flex-start;gap:7px;font-size:11px;font-weight:400;line-height:1.5;margin-bottom:8px}
+.check-label input{width:14px;height:14px;flex:0 0 14px;margin:1px 0 0;accent-color:var(--green)}
+.display-sizing label{font-size:11px}
+.display-options .small{font-size:10px}
+.display-status{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:10px 0 15px;color:var(--muted);font-size:10px;line-height:1.5}
+.display-status button{font-size:11px;white-space:nowrap}
+.work-toolbar{flex-wrap:wrap}
+.contents-view #plate-grid{grid-template-columns:28px repeat(var(--cols),var(--well-width,240px));min-width:0;align-items:stretch;gap:8px}
+.contents-view .well{min-height:130px;font-size:var(--well-font,13px);font-weight:400;line-height:1.45;padding:13px;gap:10px;overflow:visible;white-space:normal;overflow-wrap:anywhere;align-items:stretch;justify-content:flex-start;text-align:left}
+.contents-view .well.empty{min-height:70px;justify-content:flex-start}
+.well-heading{display:flex;align-items:baseline;flex-wrap:wrap;gap:6px;font-size:.85em;line-height:1.4}
+.well-heading>strong{font-size:1.1em;color:var(--ink)}
+.well-heading>span{color:var(--muted)}
+.contents-view .well-title{display:block;font-size:1em;line-height:1.5;font-weight:600;white-space:pre-wrap}
+.well-title>span{display:block}
+.well-field,.well-ingredients{display:block}
+.field-label{display:block;font-size:.74em;letter-spacing:.02em;font-weight:600;color:#516b60;margin-bottom:3px}
+.well-placeholder{display:block;font-size:.85em;color:var(--muted)}
+.reagent-entry{display:block;margin-top:7px;padding-top:7px;border-top:1px solid #203a381a}
+.reagent-top{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.reagent-top>span{min-width:0;overflow-wrap:anywhere}
+.reagent-top>strong{font-size:.92em;flex-shrink:0}
+.reagent-note{display:block;white-space:pre-wrap;color:#4f665c;font-size:.9em;margin-top:3px}
+.well-total{display:flex;flex-wrap:wrap;justify-content:space-between;gap:5px;font-weight:600;border-top:1px solid #203a3826;padding-top:8px}
+.well-total .incomplete{flex:0 0 100%;font-size:.8em;font-weight:400;color:#7f532b}
+.well-notes{white-space:pre-wrap;overflow-wrap:anywhere}
+.contents-view .well.locked{opacity:1;background-image:repeating-linear-gradient(135deg,transparent,transparent 6px,#53685909 6px,#53685909 8px)}
+.used-label{font-size:.85em;font-weight:600}
+.column-axis{position:sticky;top:0;background:#fff;z-index:3}
+.row-axis{position:sticky;left:0;background:#fff;z-index:3}
+.axis-corner{position:sticky;top:0;left:0;background:#fff;z-index:4}
+.expanded-plate .app-shell{grid-template-columns:minmax(0,1fr)}
+.expanded-plate .library,.expanded-plate .inspector{display:none}
+.expanded-plate main{padding:24px 28px}
+.expanded-plate .conditions-panel{max-width:1200px}
+#print-details{display:none}
+@media(max-width:720px){
+  .display-options-body{grid-template-columns:1fr;gap:10px}
+  .display-fields{grid-template-columns:1fr 1fr}
+  .display-status{align-items:flex-start}
+  .expanded-plate main{padding:20px 14px}
+}
+@media print{
+  .display-options,.display-status{display:none!important}
+  .readable-print .app-shell,.readable-print .print-footer{display:none!important}
+  .readable-print #print-details{display:block;font-size:var(--well-font,13px)}
+  .print-section{break-after:page}
+  .print-section:last-child{break-after:auto}
+  .print-section table{border-collapse:collapse;table-layout:fixed;width:100%}
+  .print-section thead{display:table-header-group}
+  .print-section tr{break-inside:avoid}
+  .print-section th,.print-section td{border:1px solid #b9c9bd;padding:10px;vertical-align:top}
+  .print-section th:first-child:not([colspan]){width:28px;padding:7px}
+  .print-section thead th{font-size:10pt}
+  .print-section .print-title{font-size:13pt;text-align:left;padding:12px 8px}
+  .print-well{white-space:normal;overflow-wrap:anywhere;line-height:1.4;background:color-mix(in srgb,var(--well-color) 22%,white);print-color-adjust:exact}
+  .print-well>.well-title{display:block;font-size:1em;font-weight:600;line-height:1.5;margin:8px 0}
+  .print-well>.well-field,.print-well>.well-ingredients,.print-well>.well-total{margin-top:9px}
+  .print-well .well-heading{font-size:.9em}
+  .print-well .well-placeholder{margin-top:7px}
+  body:not(.readable-print).contents-view #plate-grid{grid-template-columns:24px repeat(var(--cols),minmax(0,1fr))}
+  body:not(.readable-print).contents-view .well{font-size:8px;padding:4px;gap:5px;min-height:50px}
+  .column-axis,.row-axis,.axis-corner{position:static}
+}
