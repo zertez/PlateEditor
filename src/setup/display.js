@@ -12,26 +12,25 @@
     totals: 'Total and target volume',
     notes: 'Condition notes'
   };
-  const defaults = {mode:'details', width:240, font:13, wide:false, crop:false, fit:false, print:'details', fields:Object.fromEntries(Object.keys(fields).map(k=>[k,true]))};
+  const defaults = {version:2, mode:'overview', width:240, font:13, wide:false, crop:false, print:'details', fields:Object.fromEntries(Object.keys(fields).map(k=>[k,true]))};
   const escape = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const number = n => Number(n).toLocaleString(undefined,{maximumFractionDigits:6});
   function normalize(input = {}) {
     if (!input || typeof input !== 'object') input = {};
     const inRange = (value, min, max, fallback) => typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max ? value : fallback;
     return {
+      version:2,
       mode:['overview','contents','details'].includes(input.mode)?input.mode:defaults.mode,
       width:inRange(input.width,140,360,defaults.width),
       font:inRange(input.font,10,18,defaults.font),
       wide:input.wide === true,
       crop:input.crop === true,
-      fit:typeof input.fit === 'boolean'?input.fit:defaults.fit,
       print:input.print === 'plate'?'plate':'details',
       fields:Object.fromEntries(Object.keys(fields).map(k=>[k,typeof input.fields?.[k]==='boolean'?input.fields[k]:true]))
     };
   }
   function preset(mode, current = {}) {
     const next=normalize(current);next.mode=mode;
-    next.fit=mode==='overview';
     if(mode==='details') {next.fields={...defaults.fields};next.width=240;next.font=13;}
     if(mode==='contents') {next.fields={...defaults.fields,type:false,tagged:false,notes:false};next.width=200;next.font=12;}
     return normalize(next);
@@ -45,34 +44,15 @@
     }
     return {firstRow,lastRow,firstCol,lastCol};
   }
-  function plateGroups(cells, plate, visible) {
-    const groups=[];
-    const same=(a,b)=>a.areaIndex!==null && a.areaIndex===b.areaIndex && a.value===b.value && a.unit===b.unit && a.locked===b.locked && a.rangeIndex===b.rangeIndex;
-    for(let row=visible.firstRow;row<=visible.lastRow;row++){
-      for(let col=visible.firstCol;col<=visible.lastCol;){
-        const first=cells[row*plate.Cols+col],members=[first],start=col++;
-        while(col<=visible.lastCol && same(first,cells[row*plate.Cols+col]))members.push(cells[row*plate.Cols+col++]);
-        groups.push({row,col:start,cells:members});
-      }
-    }
-    return groups;
-  }
-  function columnWeights(cells, plate, visible) {
-    const occupied=new Set(cells.filter(c=>c.area||c.value!==null||c.locked).map(c=>c.index%plate.Cols));
-    return Array.from({length:visible.lastCol-visible.firstCol+1},(_,i)=>!occupied.size||occupied.has(i+visible.firstCol)?1:0.25);
-  }
-  function readableContent(c, options) {
-    const o=normalize(options),f=o.fields,a=c.area,recipe=a?.SetupRecipe||[],meta=[];
-    if(!a && c.value===null && !c.locked)return '';
-    if(f.tagged && c.value!==null)meta.push(number(c.value)+' '+c.unit);
-    const t=M.recipeTotal(recipe);
-    if(f.totals && t.total!==null)meta.push(number(t.total)+' µL '+(t.complete?'total':'entered'));
-    const contents=recipe.map(r=>r.name+(f.volumes?' '+(r.volume===null?'(volume unknown)':number(r.volume)+' µL'):'')+(f.concentrations&&r.concentration?' ('+r.concentration+')':'')).join(' · ');
-    return `<span class="fit-name">${escape(a?(f.name?a.Name:'Condition '+(c.areaIndex+1)):c.value!==null?'Concentration only':'Used / locked').replaceAll(' | ',' · ')}</span>${meta.length?`<span class="fit-meta">${escape(meta.join(' · '))}</span>`:''}${contents&&(f.ingredients||f.volumes||f.concentrations)?`<span class="fit-recipe">${escape(contents)}</span>`:''}`;
+  function restore(input) {
+    const next=normalize(input);
+    // Reset the earlier oversized display once; retain subsequent explicit choices.
+    if(input?.version!==defaults.version){next.mode='overview';next.wide=false;next.crop=false;}
+    return next;
   }
   function wellContent(c, options) {
     const o=normalize(options),f=o.fields,a=c.area,recipe=a?.SetupRecipe||[];
-    if(o.mode==='overview') return `<span class="well-code">${escape(c.name)}${a?' · '+(c.areaIndex+1):''}${c.locked?' · used':''}</span>${c.value!==null?`<span class="well-dose">${escape(number(c.value)+' '+c.unit)}</span>`:''}`;
+    if(o.mode==='overview') return `<span class="well-code">${a?c.areaIndex+1:escape(c.name)}${c.locked?' · used':''}</span>${c.value!==null?`<span class="well-dose">${escape(number(c.value)+' '+c.unit)}</span>`:''}`;
     const output=[`<span class="well-heading"><strong>${escape(c.name)}</strong>${a?`<span>Condition ${c.areaIndex+1}</span>`:''}${c.locked?'<span class="used-label">Used / locked</span>':''}</span>`];
     if(!a && c.value===null) output.push('<span class="well-placeholder">Unassigned</span>');
     if(a && f.name) output.push(`<span class="well-title">${escape(a.Name).split(' | ').map(s=>`<span>${s}</span>`).join('')}</span>`);
@@ -114,6 +94,6 @@
     }
     return `<header class="print-whole-title"><h2>${escape(project.title)}</h2><p>Layer ${layer+1} · ${M.wellName(b.firstRow*plate.Cols+b.firstCol,plate.Cols)}–${M.wellName(b.lastRow*plate.Cols+b.lastCol,plate.Cols)} · Volumes in µL; unrecorded volumes remain unknown.</p></header><div id="print-whole-frame"><div id="print-whole-grid" style="--cols:${b.lastCol-b.firstCol+1}">${html}</div></div>`;
   }
-  const api={fields,defaults,normalize,preset,bounds,plateGroups,columnWeights,readableContent,wellContent,printSections,printWhole};
+  const api={fields,defaults,normalize,preset,bounds,restore,wellContent,printSections,printWhole};
   if(typeof module!=='undefined' && module.exports)module.exports=api;else root.PlateSetupDisplay=api;
 })(globalThis);

@@ -45,63 +45,42 @@
     grid.style.setProperty('--rows',b.lastRow-b.firstRow+1);
     document.body.classList.toggle('contents-view',display.mode!=='overview');
     document.body.classList.toggle('expanded-plate',display.wide);
-    document.body.classList.toggle('fit-plate',display.fit);
+    document.body.classList.toggle('compact-plate',display.mode==='overview');
     document.body.style.setProperty('--well-width',display.width+'px');
     document.body.style.setProperty('--well-font',display.font+'px');
     const wellButton=c=>{
       const a=c.area,rec=a?.SetupRecipe||[];
       const title=`${c.name}: ${a?a.Name:'Unassigned'}${c.value!==null?' · '+c.value+' '+c.unit:''}${rec.length?'\n'+rec.map(r=>`${r.name}: ${r.volume===null?'not entered':r.volume+' µL'}${r.concentration?' ('+r.concentration+')':''}`).join('\n'):''}${a?.SetupNotes?'\n'+a.SetupNotes:''}${c.locked?' · Used / locked':''}`;
-      return `<button class="well ${a?'occupied':'empty'} ${c.locked?'locked':''}" data-well="${c.index}" aria-label="${esc(title)}" aria-pressed="${selection.has(c.index)}" title="${display.fit?'':esc(title)}" style="--well-color:${color(a?.Color)}">${display.fit?`<span class="fit-coordinate">${c.name}${c.locked?' · used':''}</span>`:V.wellContent(c,display)}</button>`;
+      return `<button class="well ${a?'occupied':'empty'} ${c.locked?'locked':''}" data-well="${c.index}" aria-label="${esc(title)}" aria-pressed="${selection.has(c.index)}" title="" style="--well-color:${color(a?.Color)}">${V.wellContent(c,display)}</button>`;
     };
     let html='<span class="axis-corner"></span>';
     for(let c=b.firstCol;c<=b.lastCol;c++)html+=`<button class="axis column-axis" data-col="${c}" aria-label="Select visible wells in column ${c+1}">${c+1}</button>`;
-    if(display.fit){
-      const groups=V.plateGroups(view,plate,b);
-      grid.style.setProperty('--fit-columns',V.columnWeights(view,plate,b).map(w=>`minmax(0,${w}fr)`).join(' '));
-      for(let r=b.firstRow;r<=b.lastRow;r++){
-        html+=`<button class="axis row-axis" data-row="${r}" aria-label="Select visible wells in row ${M.rowName(r)}">${M.rowName(r)}</button>`;
-        for(const group of groups.filter(g=>g.row===r)){
-          const c=group.cells[0],assigned=c.area||c.value!==null||c.locked;
-          html+=`<div class="fit-group ${assigned?'assigned':'unassigned'}" style="grid-column:span ${group.cells.length};--members:${group.cells.length};--well-color:${color(c.area?.Color)}"><div class="fit-wells">${group.cells.map(wellButton).join('')}</div>${assigned?`<div class="fit-label" aria-hidden="true">${V.readableContent(c,display)}</div>`:''}</div>`;
-        }
-      }
-    }else{
-      for(let r=b.firstRow;r<=b.lastRow;r++){
-        html+=`<button class="axis row-axis" data-row="${r}" aria-label="Select visible wells in row ${M.rowName(r)}">${M.rowName(r)}</button>`;
-        for(let col=b.firstCol;col<=b.lastCol;col++)html+=wellButton(view[r*plate.Cols+col]);
-      }
+    for(let r=b.firstRow;r<=b.lastRow;r++){
+      html+=`<button class="axis row-axis" data-row="${r}" aria-label="Select visible wells in row ${M.rowName(r)}">${M.rowName(r)}</button>`;
+      for(let col=b.firstCol;col<=b.lastCol;col++)html+=wellButton(view[r*plate.Cols+col]);
     }
     grid.innerHTML=html;
-    $('display-summary').textContent=`${display.fit?'Shared replicate labels':'Unabridged well details · '+display.font+' px text'} · ${M.wellName(b.firstRow*plate.Cols+b.firstCol,plate.Cols)}–${M.wellName(b.lastRow*plate.Cols+b.lastCol,plate.Cols)}${display.crop?' · empty outer rows/columns hidden':''}`;
+    $('display-summary').textContent=`${display.mode==='overview'?'Condition numbers · hover for full contents':'Unabridged well details · '+display.font+' px text'} · ${M.wellName(b.firstRow*plate.Cols+b.firstCol,plate.Cols)}–${M.wellName(b.lastRow*plate.Cols+b.lastCol,plate.Cols)}${display.crop?' · empty outer rows/columns hidden':''}`;
     syncDisplayControls();scheduleFit();
   }
   function syncDisplayControls(){
     for(const [id,value] of [['view-compact','overview'],['view-contents','contents'],['view-details','details']]){
-      const active=value==='overview'?display.fit:!display.fit&&display.mode===value;
+      const active=display.mode===value;
       $(id).classList.toggle('active',active);$(id).setAttribute('aria-pressed',active);
     }
     Object.keys(V.fields).forEach(key=>{$('show-'+key).checked=display.fields[key];});
     $('well-width').value=display.width;$('well-font').value=display.font;$('crop-plate').checked=display.crop;$('print-layout').value=display.print;
     $('expand-plate').textContent=display.wide?'Show editing panels':'Expand plate view';$('expand-plate').setAttribute('aria-pressed',display.wide);
-    $('fit-plate').classList.toggle('active',display.fit);$('fit-plate').setAttribute('aria-pressed',display.fit);
   }
   let fitFrame=0;
   function scheduleFit(){cancelAnimationFrame(fitFrame);fitFrame=requestAnimationFrame(fitPlate);}
   function fitPlate(){
     const grid=$('plate-grid'),scroll=$('plate-scale').parentElement;
-    if(!display.fit){scroll.style.height='';$('plate-scale-label').textContent='Actual size';return;}
+    if(display.mode!=='overview'){scroll.style.height='';return;}
     const top=scroll.getBoundingClientRect().top+window.scrollY;
     const footer=document.querySelector('.plate-card-bottom').offsetHeight;
-    scroll.style.height=Math.max(160,window.innerHeight-top-footer-20)+'px';
-    const rowHeight=(grid.clientHeight-22)/Number(grid.style.getPropertyValue('--rows'));
-    grid.classList.toggle('short-rows',rowHeight<62);
-    grid.querySelectorAll('.fit-label').forEach(label=>{
-      const name=label.querySelector('.fit-name'),recipe=label.querySelector('.fit-recipe');
-      if(!name)return;
-      const room=label.clientHeight-parseFloat(getComputedStyle(label).paddingTop)-(recipe?recipe.offsetHeight+2:0);
-      name.style.webkitLineClamp=Math.max(1,Math.min(3,Math.floor(room/parseFloat(getComputedStyle(name).lineHeight))));
-    });
-    $('plate-scale-label').textContent='Readable text';
+    const rows=Number(grid.style.getPropertyValue('--rows'));
+    scroll.style.height=Math.min(24+rows*60,Math.max(180,window.innerHeight-top-footer-20))+'px';
   }
   window.addEventListener('resize',scheduleFit);
   const fitObserver=new ResizeObserver(scheduleFit);
@@ -119,7 +98,7 @@
     $('clear-wells').disabled=!names.length;$('lock-wells').disabled=!names.length;$('assign-selected').disabled=!names.length;
     $('inspect-well').disabled=!names.length;
     $('lock-wells').textContent=names.length&&[...selection].every(i=>p.locked.includes(i))?'Unlock wells':'Mark used';
-    $('mode-hint').textContent=mode?'Hover to preview · click a starting well · Esc to cancel':display.fit?'Hover for full conditions · click to select':'Click a well to see its contents';
+    $('mode-hint').textContent=mode?'Hover to preview · click a starting well · Esc to cancel':'Hover for full contents · click to select';
     $('place-mode').textContent=mode==='replicates'?'Cancel placement':'Place replicates →';
     const i=selection.size?[...selection].at(-1):null;
     if(i===null){$('well-details').innerHTML='<p class="eyebrow">WELL CONTENTS</p><h2>Select a well</h2><p class="muted">See every reagent and its volume here.</p>';return;}
@@ -175,7 +154,7 @@
   const grid=$('plate-grid');
   function peekWell(button){
     const preview=$('well-preview');
-    if(!display.fit||mode||!button){preview.hidden=true;return;}
+    if(mode||!button){preview.hidden=true;return;}
     const c=M.cells(project(),layer)[Number(button.dataset.well)];
     preview.innerHTML=V.wellContent(c,{...V.defaults,mode:'details'});preview.hidden=false;
     const rect=button.getBoundingClientRect(),width=preview.offsetWidth,height=preview.offsetHeight;
@@ -216,7 +195,6 @@
   $('crop-plate').onchange=()=>{selection.clear();anchor=null;updateDisplay({...display,crop:$('crop-plate').checked});};
   $('print-layout').onchange=()=>updateDisplay({...display,print:$('print-layout').value});
   $('expand-plate').onclick=()=>updateDisplay({...display,wide:!display.wide});
-  $('fit-plate').onclick=()=>{if(!display.fit)$('display-options').open=false;updateDisplay({...display,mode:'details',fit:!display.fit});};
   $('inspect-well').onclick=()=>{
     if(!selection.size)return;
     $('well-dialog-title').textContent='Well '+M.wellName([...selection].at(-1),project().layout[0].Cols);
@@ -257,7 +235,7 @@
   $('analysis').onclick=e=>{try{sessionStorage.setItem('plate-setup.handoff',JSON.stringify(project().layout));$('analysis').href='Editor.html?setup=1';}catch(err){e.preventDefault();tell('Could not open the original editor. Download a backup before continuing.',true);}};
   function restoreDraft(){const d=project()?.draft;if(!d)return;editIndex=Number.isInteger(d.editIndex)&&project().layout[1][d.editIndex]?d.editIndex:null;$('condition-name').value=d.Name||'';$('condition-notes').value=d.SetupNotes||'';$('condition-color').value=color(d.Color);$('condition-type').value=d.Type||'Sample';$('target-volume').value=d.SetupTargetVolume??'';$('tag-value').value=d.tag??'';$('tag-unit').value=d.unit||'µM';$('recipe-rows').innerHTML='';(d.SetupRecipe?.length?d.SetupRecipe:[{name:'',volume:null,concentration:''}]).forEach(addReagent);$('composer-heading').textContent=editIndex===null?'New condition':`Edit condition ${editIndex+1}`;$('save-condition').textContent=editIndex===null?'Save condition':'Save recipe to all its wells';updateTotal();render();}
   async function start(){
-    try{display=V.normalize(JSON.parse(localStorage.getItem(DISPLAY_KEY)||'null'));}catch(e){display=V.normalize();}
+    try{display=V.restore(JSON.parse(localStorage.getItem(DISPLAY_KEY)||'null'));localStorage.setItem(DISPLAY_KEY,JSON.stringify(display));}catch(e){display=V.normalize();}
     try{const stored=localStorage.getItem(KEY);if(stored){const parsed=JSON.parse(stored);if(parsed.version!==1||!Array.isArray(parsed.projects))throw Error('Unrecognized plate library.');parsed.projects.forEach(p=>{M.validateLayout(p.layout);if(!Array.isArray(p.locked))throw Error('Invalid used-well markings.');});library=parsed;}}
     catch(e){storageOK=false;tell('The saved library could not be read. It has not been overwritten. Download your browser data or restore a backup before continuing.',true);$('save-state').textContent='Saved library could not be read';return;}
     // Optional untracked local seeds. No scientific layouts are bundled in the public source.

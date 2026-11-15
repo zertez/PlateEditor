@@ -48,8 +48,6 @@
 #print-details{display:none}
 .display-status,.display-actions{flex-wrap:wrap}
 .display-actions{display:flex;align-items:center;gap:8px}
-#fit-plate.active{background:var(--green);border-color:var(--green);color:white}
-#plate-scale-label{min-width:30px;font-variant-numeric:tabular-nums}
 .plate-card-bottom{flex-wrap:wrap}
 .plate-card-bottom>div{display:flex;flex-wrap:wrap;gap:4px}
 #well-dialog{width:520px;max-height:90vh;overflow:auto}
@@ -73,59 +71,42 @@
 .print-export-well>.well-title{display:block;font-size:1em;font-weight:600;line-height:1.4;margin:8px 0}
 .print-export-well>.well-field,.print-export-well>.well-ingredients,.print-export-well>.well-total{margin-top:8px}
 @media screen{#print-whole{position:absolute;left:-10000px;top:0;visibility:hidden;pointer-events:none}}
-/* A fitted plate uses shared labels, never scaled-down text. */
-.fit-group{position:relative;min-width:0;min-height:0;border:1px solid color-mix(in srgb,var(--well-color) 55%,white);border-radius:6px;background:color-mix(in srgb,var(--well-color) 16%,white);overflow:hidden}
-.fit-group.unassigned{background:#fafbf8;border:1px dashed #dfe7df}
-.fit-wells{display:grid;grid-template-columns:repeat(var(--members),minmax(0,1fr));height:100%}
-.fit-label{position:absolute;inset:3px 8px 5px;padding-top:20px;display:flex;flex-direction:column;gap:2px;pointer-events:none;overflow:hidden;color:var(--ink);text-align:left}
-.fit-name{font-size:max(12px,var(--well-font,13px));font-weight:600;line-height:1.25;min-height:1.25em;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden}
-.fit-meta,.fit-recipe{font-size:11px;line-height:1.3;flex-shrink:0;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
-.fit-meta{position:absolute;top:0;right:0;max-width:calc(100% / var(--members) - 38px);font-weight:600;color:#31594d}
-.fit-recipe{color:#415e51}
 #well-preview{position:fixed;z-index:20;width:400px;max-width:calc(100vw - 24px);max-height:65vh;overflow:auto;pointer-events:none;padding:18px;border:1px solid #9cb8a8;border-radius:10px;background:white;box-shadow:0 10px 40px #18382d30;font-size:14px;line-height:1.5}
 #well-preview>.well-title{display:block;font-size:15px;line-height:1.5;font-weight:650;margin:9px 0}
 #well-preview>.well-field,#well-preview>.well-ingredients,#well-preview>.well-total{margin-top:10px}
+/* The original compact overview keeps each well independent and fully in view. */
 @media screen{
-  .fit-plate .app-shell{grid-template-columns:212px minmax(0,1fr) 328px}
-  .fit-plate.expanded-plate .app-shell{grid-template-columns:minmax(0,1fr)}
-  .fit-plate .app-header{min-height:60px;padding:10px 22px}
-  .fit-plate main{padding:14px 20px}
-  .fit-plate .plate-title{margin-bottom:10px}
-  .fit-plate .eyebrow{margin-bottom:6px}
-  .fit-plate #project-title{font-size:20px}
-  .fit-plate .work-toolbar{margin-bottom:10px}
-  .fit-plate .display-controls{display:flex;align-items:center;gap:12px;margin-bottom:8px}
-  .fit-plate .display-options{flex:0 0 190px;margin:0}
-  .fit-plate .display-controls:has(details[open]){display:block}
-  .fit-plate .display-controls:has(details[open]) .display-options{margin-bottom:8px}
-  .fit-plate .display-options>summary{padding:8px 12px}
-  .fit-plate .display-status{flex:1;min-width:0;margin:0}
-  .fit-plate .plate-card-top{padding:10px 14px}
-  .fit-plate .plate-scroll{overflow:hidden;max-height:none;padding:8px}
-  .fit-plate #plate-scale{width:100%;height:100%}
-  .fit-plate #plate-grid{width:100%;height:100%;min-width:0;gap:4px;grid-template-columns:22px var(--fit-columns);grid-template-rows:20px repeat(var(--rows),minmax(0,1fr))}
-  .fit-plate .axis{position:static;font-size:11px}
-  .fit-plate .fit-group .well{height:100%;min-height:0;min-width:0;display:flex;align-items:stretch;justify-content:flex-start;border:0;border-radius:0;padding:0;gap:0;background:transparent;text-align:left;opacity:1}
-  .fit-plate .fit-group .well+.well{border-left:1px solid #ffffff70}
-  .fit-coordinate{font-size:10px;font-weight:650;line-height:16px;padding:2px 5px;border-bottom:1px solid #203a3817;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .fit-group.unassigned .fit-coordinate{padding:2px 1px}
-  .fit-plate .fit-group .well.selected{outline-offset:-2px;background:#246d5d15}
-  .fit-plate .fit-group .well.preview{outline-offset:-2px;background:#246d5d30}
-  .fit-plate .fit-group .well.invalid{background:#fce4dd}
-  .fit-plate .fit-group .well:focus-visible{outline-offset:-2px}
-  .fit-plate .fit-group .well:hover{box-shadow:inset 0 0 0 2px #254f3e45}
-  .short-rows .fit-label{inset:3px 6px;padding-top:18px}
-  .short-rows .fit-name{font-size:max(12px,calc(var(--well-font,13px) - 1px));-webkit-line-clamp:2}
-  .short-rows .fit-meta,.short-rows .fit-recipe{font-size:11px}
-  @media(max-width:1150px){.fit-plate .app-shell{grid-template-columns:180px minmax(0,1fr)}}
+  .compact-plate .app-shell{grid-template-columns:212px minmax(0,1fr) 328px}
+  .compact-plate.expanded-plate .app-shell{grid-template-columns:minmax(0,1fr)}
+  .compact-plate .app-header{min-height:60px;padding:10px 22px}
+  .compact-plate main{padding:14px 20px}
+  .compact-plate .plate-title{margin-bottom:10px}
+  .compact-plate .eyebrow{margin-bottom:6px}
+  .compact-plate #project-title{font-size:20px}
+  .compact-plate .work-toolbar{margin-bottom:10px}
+  .compact-plate .display-controls{display:flex;align-items:center;gap:12px;margin-bottom:8px}
+  .compact-plate .display-options{flex:0 0 190px;margin:0}
+  .compact-plate .display-controls:has(details[open]){display:block}
+  .compact-plate .display-controls:has(details[open]) .display-options{margin-bottom:8px}
+  .compact-plate .display-options>summary{padding:8px 12px}
+  .compact-plate .display-status{flex:1;min-width:0;margin:0}
+  .compact-plate .plate-card-top{padding:10px 14px}
+  .compact-plate .plate-scroll{overflow:hidden;max-height:none;padding:10px}
+  .compact-plate #plate-scale{width:100%;height:100%}
+  .compact-plate #plate-grid{width:100%;height:100%;min-width:0;gap:5px;grid-template-columns:22px repeat(var(--cols),minmax(0,1fr));grid-template-rows:20px repeat(var(--rows),minmax(0,1fr))}
+  .compact-plate .axis{position:static;font-size:10px}
+  .compact-plate .well{height:100%;min-height:0;min-width:0;overflow:hidden;padding:2px 1px;gap:2px;font-size:11px;line-height:1.2}
+  .compact-plate .well-dose{font-size:10px;white-space:nowrap;max-width:100%;text-overflow:ellipsis}
+  .compact-plate .well.selected,.compact-plate .well.preview{outline-offset:-2px}
+  @media(max-width:1150px){.compact-plate .app-shell{grid-template-columns:180px minmax(0,1fr)}}
 }
 @media(max-width:720px){
   .display-options-body{grid-template-columns:1fr;gap:10px}
   .display-fields{grid-template-columns:1fr 1fr}
   .display-status{align-items:flex-start}
   .expanded-plate main{padding:20px 14px}
-  .fit-plate .display-controls{display:block}
-  .fit-plate .display-options{margin-bottom:8px}
+  .compact-plate .display-controls{display:block}
+  .compact-plate .display-options{margin-bottom:8px}
 }
 @media print{
   #plate-scale{width:auto!important;height:auto!important}
@@ -135,12 +116,6 @@
   #print-whole{display:none}
   .whole-plate-print .app-shell,.whole-plate-print .print-footer,.whole-plate-print #print-details{display:none!important}
   .whole-plate-print #print-whole{display:flex;position:relative;left:0;top:0;visibility:visible;break-inside:avoid}
-  .fit-group{min-height:70px;break-inside:avoid}
-  .fit-wells{height:20px}
-  .fit-wells .well{min-height:0;padding:2px;font-size:8px}
-  .fit-label{position:static;padding:4px;overflow:visible}
-  .fit-name{display:block;overflow:visible;font-size:8px}
-  .fit-meta,.fit-recipe{position:static;max-width:none;font-size:7px;white-space:normal;overflow:visible}
   .display-options,.display-status{display:none!important}
   .readable-print .app-shell,.readable-print .print-footer{display:none!important}
   .readable-print #print-details{display:block;font-size:var(--well-font,13px)}
