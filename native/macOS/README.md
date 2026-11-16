@@ -19,6 +19,8 @@ Set `NODE_BIN` if Node is not on your PATH. The script creates `dist/PlateLab.ap
 
 The tracker opens as one compact table: sample, volume left, concentration, thaw count, and location.
 
+Double-click **volume** or **concentration** to edit the number in its cell. Press Return (or leave the field), enter **Reason for change** in the small popover, and save. The change is stored with its old value, new value, explanation, date, and time. Escape or Cancel leaves the saved value unchanged. Clicking a sample name opens the full history; double-clicking other cells no longer opens that window. Volume edits replace the total remaining volume, so enter what is left after a transfer or assay. Concentration edits update that tube’s current concentration and remaining protein mass.
+
 1. Choose **Add sample** and enter the name and any known values. Each sample represents one tube; protein records are created in the background in the same save. Extra fields are optional.
 2. Choose **Use…** beside a sample, enter the volume used, and see the amount that will remain before saving. Notes are optional.
 3. Use **− / +** in the **Thaws** column to update the count directly. **+** records one thaw, marks the sample thawed, and deducts **1.5 µL** for concentration measurement in one saved entry. This works even if a previous refreeze was not logged. **−** corrects the latest counted thaw and restores its associated measurement volume, without deleting history or changing storage state. Counts cannot go below zero, and a known balance below 1.5 µL blocks the whole increment.
@@ -28,7 +30,7 @@ Each tube has independent volume and thaw history. Refreezing does not add a tha
 
 Starting counts and historical counter entries do not deduct volume retrospectively and do not restore unrecorded measurement volumes when corrected. Registration counters only set the opening count. If a remaining volume has been manually corrected since a thaw, correcting that earlier thaw does not add volume to the newer measured balance.
 
-Leave the volume blank when it is unknown. The app preserves that distinction from zero. A thaw measurement still logs the known 1.5 µL use, while the remaining balance stays unknown. Other withdrawals require a known balance. Use **Adjust volume** with a reason to establish the first measured balance. Imported history can retain undated events or dates without an invented time. Sample backup version 4 includes linked thaw measurements; versions 1–3 remain readable. CSV exports include the corrected current thaw count and remaining volume.
+Leave the volume blank when it is unknown. The app preserves that distinction from zero. A thaw measurement still logs the known 1.5 µL use, while the remaining balance stays unknown. Other withdrawals require a known balance. Double-click the volume cell (or use **Adjust volume**) to establish the first measured balance. Imported history can retain undated events or dates without an invented time. Sample backup version 5 includes value-change history; versions 1–4 remain readable. CSV exports include current concentration, thaw count, and remaining volume.
 
 ## Plates and sample usage
 

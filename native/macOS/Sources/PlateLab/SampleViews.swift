@@ -66,11 +66,10 @@ struct SampleLibraryView: View {
                         }.buttonStyle(.plain).help("View \(a.label) details and history")
                     }.width(min: 130, ideal: 180, max: 270)
                     TableColumn("Left (µL)") { a in
-                        Text(a.remainingUL.map(number) ?? "—").monospacedDigit().fontWeight(.medium)
-                            .help(a.remainingUL == nil ? "Volume not recorded" : "Remaining volume in µL")
+                        EditableSampleValue(sample: a, field: .volume)
                     }.width(min: 85, ideal: 105, max: 130)
                     TableColumn("Conc. (mg/mL)") { a in
-                        Text(a.concentrationMgML.map(number) ?? "—").monospacedDigit()
+                        EditableSampleValue(sample: a, field: .concentration)
                     }.width(min: 105, ideal: 120, max: 150)
                     TableColumn("Thaws") { a in
                         ThawCounter(aliquot: a)
@@ -115,15 +114,11 @@ struct SampleLibraryView: View {
                         Button("Change location…") { sheet = .event(a, .moved) }.disabled(a.archived)
                         Button("Adjust volume…") { sheet = .event(a, .volumeCorrection) }.disabled(a.archived)
                     }
-                } primaryAction: { ids in
-                    if let id = ids.first, let a = matching.first(where: { $0.id == id }) {
-                        sheet = .details(a)
-                    }
                 }
             }
             Divider()
             HStack {
-                Text("Each + adds a thaw and uses 1.5 µL. Click a sample name for history.")
+                Text("Double-click volume or concentration to edit. Each + uses 1.5 µL.")
                 Spacer()
                 Text("— Not recorded").foregroundStyle(.tertiary)
             }.font(.caption).foregroundStyle(.secondary).padding(.horizontal, 22).padding(.vertical, 11)
@@ -231,7 +226,7 @@ struct SampleDetailsView: View {
                 VStack(alignment: .leading, spacing: 20) {
                     HStack(spacing: 30) {
                         detail("Remaining", volumeLabel(aliquot.remainingUL))
-                        detail("Concentration", aliquot.concentrationMgML.map { "\(number($0)) mg/mL" } ?? "Not recorded")
+                        detail("Concentration", aliquot.currentConcentrationMgML.map { "\(number($0)) mg/mL" } ?? "Not recorded")
                         VStack(alignment: .leading, spacing: 6) {
                             Text("Thaws").font(.caption).foregroundStyle(.secondary)
                             ThawCounter(aliquot: aliquot)
@@ -288,6 +283,11 @@ private struct HistoryRow: View {
     let event: SampleEvent
     @State private var expanded = false
     private var title: String {
+        if let after = event.valueAfter {
+            let unit = event.kind == EventKind.concentrationCorrection.rawValue ? "mg/mL" : "µL"
+            let name = event.kind == EventKind.concentrationCorrection.rawValue ? "Concentration" : "Volume"
+            return "\(name): \(event.valueBefore.map(number) ?? "Unknown") → \(number(after)) \(unit)"
+        }
         if event.kind == EventKind.thawWithMeasurement.rawValue { return "Thawed (+1) · measured with \(volumeLabel(-event.volumeDeltaUL))" }
         if event.kind == EventKind.thawCountDecrease.rawValue, event.volumeDeltaUL > 0 { return "Thaw corrected (−1) · restored \(volumeLabel(event.volumeDeltaUL))" }
         if event.kind == EventKind.thawCountIncrease.rawValue { return "Thawed (+1)" }
@@ -311,6 +311,7 @@ private struct HistoryRow: View {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title).fontWeight(.medium)
+                    if event.valueAfter != nil, !event.notes.isEmpty { Text(event.notes).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
                     if !event.experiment.isEmpty { Text(event.experiment).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
                 }
                 Spacer()

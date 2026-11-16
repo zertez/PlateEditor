@@ -12,6 +12,13 @@ enum EventKind: String, Codable, CaseIterable {
     case volumeCorrection = "Volume correction", moved = "Moved"
     case thawCountIncrease = "Thaw count +1", thawCountDecrease = "Thaw count -1"
     case thawWithMeasurement = "Thaw and concentration measurement"
+    case concentrationCorrection = "Concentration change"
+}
+enum SampleValueField: String {
+    case volume, concentration
+    var title: String { self == .volume ? "Volume" : "Concentration" }
+    var unit: String { self == .volume ? "µL" : "mg/mL" }
+    func value(in sample: Aliquot) -> Double? { self == .volume ? sample.remainingUL : sample.currentConcentrationMgML }
 }
 struct LabError: LocalizedError {
     let message: String
@@ -67,8 +74,12 @@ func quantity(_ text: String, name: String, optional: Bool = false) throws -> Do
     var orderedEvents: [SampleEvent] { events.sorted { $0.sequence < $1.sequence } }
     var remainingUL: Double? {
         orderedEvents.reduce(startingVolumeUL) { balance, event in
-            event.volumeAfterUL ?? balance.map { max(0, $0 + event.volumeDeltaUL) }
+            if event.kind == EventKind.volumeCorrection.rawValue, let value = event.valueAfter { return value }
+            return event.volumeAfterUL ?? balance.map { max(0, $0 + event.volumeDeltaUL) }
         }
+    }
+    var currentConcentrationMgML: Double? {
+        orderedEvents.last(where: { $0.kind == EventKind.concentrationCorrection.rawValue })?.valueAfter ?? concentrationMgML
     }
     var recordedThaws: Int { events.filter { [EventKind.thaw.rawValue, EventKind.thawCountIncrease.rawValue, EventKind.thawWithMeasurement.rawValue].contains($0.kind) }.count }
     var thawCorrections: Int { events.filter { $0.kind == EventKind.thawCountDecrease.rawValue }.count }
@@ -90,7 +101,7 @@ func quantity(_ text: String, name: String, optional: Bool = false) throws -> Do
     }
     var state: StorageState { StorageState(rawValue: orderedEvents.last(where: { $0.newState != nil })?.newState ?? initialState) ?? .unknown }
     var location: String { orderedEvents.last(where: { $0.newLocation != nil })?.newLocation ?? initialLocation }
-    var massUG: Double? { guard let concentrationMgML, let remainingUL else { return nil };return concentrationMgML * remainingUL }
+    var massUG: Double? { guard let concentration = currentConcentrationMgML, let remainingUL else { return nil };return concentration * remainingUL }
 }
 @Model final class SampleEvent {
     @Attribute(.unique) var id: UUID
@@ -100,6 +111,8 @@ func quantity(_ text: String, name: String, optional: Bool = false) throws -> Do
     var kind: String
     var volumeDeltaUL: Double
     var volumeAfterUL: Double?
+    var valueBefore: Double?
+    var valueAfter: Double?
     var newState: String?
     var newLocation: String?
     var notes: String
@@ -107,9 +120,10 @@ func quantity(_ text: String, name: String, optional: Bool = false) throws -> Do
     var plateID: String?
     var wells: String
     var aliquot: Aliquot?
-    init(id: UUID = UUID(), sequence: Int, date: Date? = Date(), dateOnly: Bool = false, kind: EventKind, delta: Double = 0, volumeAfter: Double? = nil, state: StorageState? = nil, location: String? = nil, notes: String = "", experiment: String = "", plateID: String? = nil, wells: String = "") {
+    init(id: UUID = UUID(), sequence: Int, date: Date? = Date(), dateOnly: Bool = false, kind: EventKind, delta: Double = 0, volumeAfter: Double? = nil, state: StorageState? = nil, location: String? = nil, notes: String = "", experiment: String = "", plateID: String? = nil, wells: String = "", valueBefore: Double? = nil, valueAfter: Double? = nil) {
         self.id=id; self.sequence=sequence; self.date=date; self.kind=kind.rawValue; self.volumeDeltaUL=delta
         self.dateOnly=dateOnly;self.volumeAfterUL=volumeAfter
+        self.valueBefore=valueBefore;self.valueAfter=valueAfter
         self.newState=state?.rawValue; self.newLocation=location; self.notes=notes; self.experiment=experiment; self.plateID=plateID; self.wells=wells
     }
 }
@@ -147,6 +161,7 @@ func quantity(_ text: String, name: String, optional: Bool = false) throws -> Do
     static func record(_ kind: EventKind, for aliquot: Aliquot, amount: Double? = nil, location: String = "", notes: String = "", experiment: String = "", plateID: String? = nil, wells: String = "", in context: ModelContext) throws {
         guard !aliquot.archived else { throw LabError("Restore this sample before recording an event.") }
         var delta=0.0; var state: StorageState?; var newLocation: String?;var volumeAfter: Double?
+        var valueBefore: Double?;var valueAfter: Double?
         switch kind {
         case .withdrawal:
             guard let amount, amount.isFinite, amount > 0 else { throw LabError("Enter the volume actually transferred in µL.") }
@@ -156,6 +171,10 @@ func quantity(_ text: String, name: String, optional: Bool = false) throws -> Do
         case .volumeCorrection:
             guard let amount, amount.isFinite, amount >= 0, !clean(notes).isEmpty else { throw LabError("Enter the corrected remaining volume and a reason for the correction.") }
             if let remaining=aliquot.remainingUL { delta=amount-remaining } else { volumeAfter=amount }
+            valueBefore=aliquot.remainingUL;valueAfter=amount
+        case .concentrationCorrection:
+            guard let amount, amount.isFinite, amount >= 0, !clean(notes).isEmpty else { throw LabError("Enter a non-negative concentration and a reason for the change.") }
+            valueBefore=aliquot.currentConcentrationMgML;valueAfter=amount
         case .thaw:
             guard aliquot.state == .frozen else { throw LabError("Only a currently frozen aliquot can be marked thawed. Its starting state may be unknown.") }
             guard aliquot.countedThaws < Int.max else { throw LabError("The thaw count is already at its maximum.") }
@@ -180,9 +199,17 @@ func quantity(_ text: String, name: String, optional: Bool = false) throws -> Do
             guard !clean(location).isEmpty else { throw LabError("Enter the new storage location.") }
             newLocation=clean(location)
         }
-        let event=SampleEvent(sequence:(aliquot.events.map(\.sequence).max() ?? 0)+1,kind:kind,delta:delta,volumeAfter:volumeAfter,state:state,location:newLocation,notes:clean(notes),experiment:clean(experiment),plateID:plateID,wells:wells)
+        let event=SampleEvent(sequence:(aliquot.events.map(\.sequence).max() ?? 0)+1,kind:kind,delta:delta,volumeAfter:volumeAfter,state:state,location:newLocation,notes:clean(notes),experiment:clean(experiment),plateID:plateID,wells:wells,valueBefore:valueBefore,valueAfter:valueAfter)
         context.insert(event); event.aliquot=aliquot
         try save(context)
+    }
+    static func changeValue(_ field: SampleValueField, for sample: Aliquot, to value: Double, expected: Double?, reason: String, in context: ModelContext) throws {
+        guard !sample.archived else { throw LabError("Restore this sample before editing its values.") }
+        guard field.value(in: sample) == expected else { throw LabError("This value changed while you were editing. Cancel and enter it again.") }
+        guard value.isFinite, value >= 0 else { throw LabError("Enter a non-negative number.") }
+        guard !clean(reason).isEmpty else { throw LabError("Enter a reason for the change.") }
+        guard expected != value else { return }
+        try record(field == .volume ? .volumeCorrection : .concentrationCorrection, for: sample, amount: value, notes: reason, in: context)
     }
     static func save(_ context: ModelContext) throws {
         do { try context.save() } catch { context.rollback(); throw error }
