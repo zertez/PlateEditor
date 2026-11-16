@@ -108,7 +108,7 @@ struct SampleLibraryView: View {
                             .disabled(a.archived || (a.remainingUL ?? 0) <= 0)
                         Button("Details & history…") { sheet = .details(a) }
                         Divider()
-                        Button("Add one thaw (+1)") { changeCount(a, kind: .thawCountIncrease) }.disabled(a.archived || a.countedThaws == Int.max)
+                        Button("Thaw + measure (−1.5 µL)") { changeCount(a, kind: .thawWithMeasurement) }.disabled(a.archived || a.countedThaws == Int.max)
                         Button("Correct thaw count (−1)") { changeCount(a, kind: .thawCountDecrease) }.disabled(a.archived || a.countedThaws == 0)
                         Button("Mark refrozen") { recordState(a) }
                             .disabled(a.archived || a.state == .frozen)
@@ -123,7 +123,7 @@ struct SampleLibraryView: View {
             }
             Divider()
             HStack {
-                Text("Click a sample name for details and history.")
+                Text("Each + adds a thaw and uses 1.5 µL. Click a sample name for history.")
                 Spacer()
                 Text("— Not recorded").foregroundStyle(.tertiary)
             }.font(.caption).foregroundStyle(.secondary).padding(.horizontal, 22).padding(.vertical, 11)
@@ -171,6 +171,8 @@ struct CounterButtons: View {
     let value: Int?
     var label: String? = nil
     var sampleName = ""
+    var decreaseHelp = "Decrease the starting thaw count by one."
+    var increaseHelp = "Increase the starting thaw count by one."
     let decrease: () -> Void
     let increase: () -> Void
     var body: some View {
@@ -178,12 +180,12 @@ struct CounterButtons: View {
             Button(action: decrease) { Image(systemName: "minus").frame(width: 18, height: 20) }
                 .disabled((value ?? 0) <= 0)
                 .accessibilityLabel("Decrease thaw count \(sampleName)")
-                .help("Correct the thaw count by subtracting one. Does not change frozen/thawed state.")
+                .help(decreaseHelp)
             if let label { Text(label).monospacedDigit().frame(minWidth: 27).accessibilityLabel("Thaw count: \(label)") }
             Button(action: increase) { Image(systemName: "plus").frame(width: 18, height: 20) }
                 .disabled(value == nil || value == Int.max || (value ?? -1) < 0)
                 .accessibilityLabel("Increase thaw count \(sampleName)")
-                .help("Record one thaw. Refreezing does not increase the count.")
+                .help(increaseHelp)
         }.buttonStyle(.bordered).controlSize(.small)
             .accessibilityElement(children: .contain)
     }
@@ -195,8 +197,10 @@ private struct ThawCounter: View {
     let aliquot: Aliquot
     var body: some View {
         CounterButtons(value: aliquot.countedThaws, label: compactThawCount(aliquot), sampleName: "for \(aliquot.label)",
-                       decrease: { change(.thawCountDecrease) }, increase: { change(.thawCountIncrease) })
-            .disabled(aliquot.archived).help(aliquot.thawLabel)
+                       decreaseHelp: aliquot.nextThawCorrectionVolumeUL > 0 ? "Undo the latest thaw and restore its 1.5 µL measurement." : "Correct the thaw count by one. This entry has no measurement volume to restore.",
+                       increaseHelp: "Record one thaw and deduct 1.5 µL for concentration measurement.",
+                       decrease: { change(.thawCountDecrease) }, increase: { change(.thawWithMeasurement) })
+            .disabled(aliquot.archived)
     }
     private func change(_ kind: EventKind) {
         do { try Inventory.record(kind, for: aliquot, in: context) }
@@ -231,6 +235,7 @@ struct SampleDetailsView: View {
                         VStack(alignment: .leading, spacing: 6) {
                             Text("Thaws").font(.caption).foregroundStyle(.secondary)
                             ThawCounter(aliquot: aliquot)
+                            Text("+ uses 1.5 µL").font(.caption2).foregroundStyle(.secondary)
                         }.frame(maxWidth: .infinity, alignment: .leading)
                     }
                     DisclosureGroup("History (\(aliquot.events.count))", isExpanded: $showHistory) {
@@ -283,6 +288,8 @@ private struct HistoryRow: View {
     let event: SampleEvent
     @State private var expanded = false
     private var title: String {
+        if event.kind == EventKind.thawWithMeasurement.rawValue { return "Thawed (+1) · measured with \(volumeLabel(-event.volumeDeltaUL))" }
+        if event.kind == EventKind.thawCountDecrease.rawValue, event.volumeDeltaUL > 0 { return "Thaw corrected (−1) · restored \(volumeLabel(event.volumeDeltaUL))" }
         if event.kind == EventKind.thawCountIncrease.rawValue { return "Thawed (+1)" }
         if event.kind == EventKind.thawCountDecrease.rawValue { return "Thaw count corrected (−1)" }
         if event.kind == EventKind.withdrawal.rawValue { return "Used \(volumeLabel(-event.volumeDeltaUL))" }

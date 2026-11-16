@@ -125,6 +125,7 @@ struct EventForm: View {
         case .thaw: "Thaw \(aliquot.label)"
         case .thawCountIncrease: "Add a thaw · \(aliquot.label)"
         case .thawCountDecrease: "Correct thaw count · \(aliquot.label)"
+        case .thawWithMeasurement: "Thaw and measure · \(aliquot.label)"
         }
     }
     private var remainingAfter: Double? {

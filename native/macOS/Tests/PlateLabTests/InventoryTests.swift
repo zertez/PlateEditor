@@ -3,6 +3,85 @@ import SwiftData
 @testable import PlateLab
 
 final class InventoryTests: XCTestCase {
+    @MainActor func testThawMeasurementDeductsAndUndoesTogether() throws {
+        let (app,batch,a)=try fixture();let context=app.container.mainContext
+        try Inventory.record(.thawWithMeasurement,for:a,in:context)
+        XCTAssertEqual(a.countedThaws,1);XCTAssertEqual(a.remainingUL,98.5);XCTAssertEqual(a.massUG,197)
+        XCTAssertEqual(a.events.count,1);XCTAssertEqual(a.state,.thawed)
+        try Inventory.record(.freeze,for:a,in:context)
+        XCTAssertEqual(a.remainingUL,98.5);XCTAssertEqual(a.countedThaws,1)
+        try Inventory.record(.thawWithMeasurement,for:a,in:context)
+        try Inventory.record(.withdrawal,for:a,amount:10,in:context)
+        XCTAssertEqual(a.remainingUL,87)
+        try Inventory.record(.thawCountDecrease,for:a,in:context)
+        XCTAssertEqual(a.remainingUL,88.5);XCTAssertEqual(a.countedThaws,1)
+        try Inventory.record(.thawCountDecrease,for:a,in:context)
+        XCTAssertEqual(a.remainingUL,90);XCTAssertEqual(a.countedThaws,0)
+        XCTAssertThrowsError(try Inventory.record(.thawCountDecrease,for:a,in:context))
+        XCTAssertEqual(a.events.count,6)
+        try SampleBackup(batches:[batch]).validate()
+
+        let tiny=Aliquot(label:"Last measurement",volume:1.5,concentration:2,thawCount:0,state:.frozen,location:"")
+        try Inventory.addAliquot(tiny,to:batch,in:context)
+        try Inventory.record(.thawWithMeasurement,for:tiny,in:context)
+        XCTAssertEqual(tiny.remainingUL,0);XCTAssertEqual(tiny.countedThaws,1)
+        XCTAssertThrowsError(try Inventory.record(.thawWithMeasurement,for:tiny,in:context))
+        XCTAssertEqual(tiny.events.count,1);XCTAssertEqual(tiny.countedThaws,1)
+        try Inventory.record(.thawCountDecrease,for:tiny,in:context)
+        XCTAssertEqual(tiny.remainingUL,1.5);XCTAssertEqual(tiny.countedThaws,0)
+        tiny.archived=true;try Inventory.save(context)
+        XCTAssertThrowsError(try Inventory.record(.thawWithMeasurement,for:tiny,in:context))
+    }
+    @MainActor func testMeasurementsPreserveHistoricalAndUnknownBalances() throws {
+        let (app,batch,a)=try fixture();let context=app.container.mainContext
+        a.startingThawCount=1
+        try Inventory.record(.withdrawal,for:a,amount:1.5,notes:"Previously measured",in:context)
+        try Inventory.record(.thawCountIncrease,for:a,in:context)
+        try Inventory.record(.thawCountDecrease,for:a,in:context)
+        try Inventory.record(.thawCountDecrease,for:a,in:context)
+        XCTAssertEqual(a.remainingUL,98.5);XCTAssertEqual(a.countedThaws,0)
+        try Inventory.record(.thawWithMeasurement,for:a,in:context)
+        try Inventory.record(.volumeCorrection,for:a,amount:50,notes:"Measured remaining balance",in:context)
+        try Inventory.record(.thawCountDecrease,for:a,in:context)
+        XCTAssertEqual(a.remainingUL,50)
+
+        let unknown=Aliquot(label:"Unknown balance",volume:nil,concentration:nil,thawCount:nil,state:.unknown,location:"")
+        try Inventory.addAliquot(unknown,to:batch,in:context)
+        try Inventory.record(.thawWithMeasurement,for:unknown,in:context)
+        XCTAssertNil(unknown.remainingUL);XCTAssertEqual(unknown.thawLabel,"Unknown + 1 recorded")
+        XCTAssertEqual(unknown.orderedEvents.last?.volumeDeltaUL,-1.5)
+        try Inventory.record(.volumeCorrection,for:unknown,amount:20,notes:"Measured remaining balance",in:context)
+        try Inventory.record(.thawCountDecrease,for:unknown,in:context)
+        XCTAssertEqual(unknown.remainingUL,20);XCTAssertNil(unknown.startingThawCount)
+        try SampleBackup(batches:[batch]).validate()
+    }
+    @MainActor func testMeasurementBackupRoundTripAndInvalidRefunds() throws {
+        let (app,batch,a)=try fixture();let context=app.container.mainContext
+        try Inventory.record(.thawWithMeasurement,for:a,in:context)
+        try Inventory.record(.thawCountDecrease,for:a,in:context)
+        try Inventory.record(.thawWithMeasurement,for:a,in:context)
+        let backup=SampleBackup(batches:[batch]);XCTAssertEqual(backup.version,4)
+        let target=try AppState(directory:FileManager.default.temporaryDirectory,memory:true)
+        let decoded=try JSONDecoder().decode(SampleBackup.self,from:backup.data())
+        XCTAssertEqual(try decoded.merge(into:target.container.mainContext),1)
+        let restored=try XCTUnwrap(target.container.mainContext.fetch(FetchDescriptor<Aliquot>()).first)
+        XCTAssertEqual(restored.remainingUL,98.5);XCTAssertEqual(restored.countedThaws,1)
+        XCTAssertEqual(restored.nextThawCorrectionVolumeUL,1.5)
+        var wrongAmount=backup;wrongAmount.batches[0].aliquots[0].events[0].delta = -3
+        var wrongRefund=backup;wrongRefund.batches[0].aliquots[0].events[1].delta = 3
+        var forgedRefund=backup;forgedRefund.batches[0].aliquots[0].events[0].kind = .thawCountIncrease
+        forgedRefund.batches[0].aliquots[0].events[0].delta=0
+        var negative=backup;negative.batches[0].aliquots[0].volume=1
+        var oldVersion=backup;oldVersion.version=3
+        let empty=try AppState(directory:FileManager.default.temporaryDirectory,memory:true)
+        for invalid in [wrongAmount,wrongRefund,forgedRefund,negative,oldVersion] { XCTAssertThrowsError(try invalid.merge(into:empty.container.mainContext)) }
+        XCTAssertEqual(try empty.container.mainContext.fetchCount(FetchDescriptor<ProteinBatch>()),0)
+        let legacySource=try fixture()
+        try Inventory.record(.thawCountIncrease,for:legacySource.2,in:legacySource.0.container.mainContext)
+        legacySource.2.label="Old counter sample"
+        var legacy=withExtendedLifetime(legacySource) { SampleBackup(batches:[legacySource.1]) };legacy.version=3
+        XCTAssertEqual(try legacy.merge(into:target.container.mainContext),1)
+    }
     @MainActor func testThawCounterPreservesHistoryAndUnknownBaseline() throws {
         let (app,batch,unknown)=try fixture();let context=app.container.mainContext
         let known=Aliquot(label:"Counter",volume:50,concentration:2,thawCount:1,state:.unknown,location:"")
@@ -42,7 +121,7 @@ final class InventoryTests: XCTestCase {
         try Inventory.record(.freeze,for:a,in:context)
         try Inventory.record(.thaw,for:a,in:context)
         try Inventory.record(.thawCountDecrease,for:a,in:context)
-        let backup=SampleBackup(batches:[batch]);XCTAssertEqual(backup.version,3)
+        let backup=SampleBackup(batches:[batch]);XCTAssertEqual(backup.version,4)
         let target=try AppState(directory:FileManager.default.temporaryDirectory,memory:true)
         let decoded=try JSONDecoder().decode(SampleBackup.self,from:backup.data())
         XCTAssertEqual(try decoded.merge(into:target.container.mainContext),1)
@@ -218,16 +297,16 @@ final class InventoryTests: XCTestCase {
             let a=Aliquot(label:"P-01",volume:40,concentration:nil,thawCount:0,state:.frozen,location:"Box A")
             try Inventory.addAliquot(a,to:batch,in:context)
             try Inventory.record(.withdrawal,for:a,amount:7,in:context)
-            try Inventory.record(.thawCountIncrease,for:a,in:context)
-            try Inventory.record(.thawCountIncrease,for:a,in:context)
+            try Inventory.record(.thawWithMeasurement,for:a,in:context)
+            try Inventory.record(.thawWithMeasurement,for:a,in:context)
             try Inventory.record(.thawCountDecrease,for:a,in:context)
             try app!.writeJSON(["version":1,"projects":[],"active":NSNull()] as [String:Any],name:"plates.json")
-            XCTAssertEqual(a.remainingUL,33)
+            XCTAssertEqual(a.remainingUL,31.5)
         }
         app=nil
         let reopened=try AppState(directory:directory)
         let a=try XCTUnwrap(reopened.container.mainContext.fetch(FetchDescriptor<Aliquot>()).first)
-        XCTAssertEqual(a.remainingUL,33);XCTAssertEqual(a.events.count,4);XCTAssertEqual(a.thawLabel,"1")
+        XCTAssertEqual(a.remainingUL,31.5);XCTAssertEqual(a.events.count,4);XCTAssertEqual(a.thawLabel,"1")
         let plates=try XCTUnwrap(reopened.readJSON("plates.json",fallback:[:]) as? [String:Any])
         XCTAssertEqual(plates["version"] as? Int,1)
     }

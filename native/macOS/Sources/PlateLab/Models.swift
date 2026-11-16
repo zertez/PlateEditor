@@ -1,6 +1,8 @@
 import Foundation
 import SwiftData
 
+let concentrationMeasurementVolumeUL = 1.5
+
 enum StorageState: String, Codable, CaseIterable, Identifiable {
     case unknown = "Unknown", frozen = "Frozen", thawed = "Thawed"
     var id: String { rawValue }
@@ -9,6 +11,7 @@ enum EventKind: String, Codable, CaseIterable {
     case withdrawal = "Withdrawal", freeze = "Frozen", thaw = "Thawed"
     case volumeCorrection = "Volume correction", moved = "Moved"
     case thawCountIncrease = "Thaw count +1", thawCountDecrease = "Thaw count -1"
+    case thawWithMeasurement = "Thaw and concentration measurement"
 }
 struct LabError: LocalizedError {
     let message: String
@@ -67,10 +70,24 @@ func quantity(_ text: String, name: String, optional: Bool = false) throws -> Do
             event.volumeAfterUL ?? balance.map { max(0, $0 + event.volumeDeltaUL) }
         }
     }
-    var recordedThaws: Int { events.filter { $0.kind == EventKind.thaw.rawValue || $0.kind == EventKind.thawCountIncrease.rawValue }.count }
+    var recordedThaws: Int { events.filter { [EventKind.thaw.rawValue, EventKind.thawCountIncrease.rawValue, EventKind.thawWithMeasurement.rawValue].contains($0.kind) }.count }
     var thawCorrections: Int { events.filter { $0.kind == EventKind.thawCountDecrease.rawValue }.count }
     var countedThaws: Int { (startingThawCount ?? 0) + (recordedThaws - thawCorrections) }
     var thawLabel: String { startingThawCount.map { _ in String(countedThaws) } ?? "Unknown + \(countedThaws) recorded" }
+    var nextThawCorrectionVolumeUL: Double {
+        var measurements: [Double] = []
+        for event in orderedEvents {
+            switch EventKind(rawValue: event.kind) {
+            case .thaw, .thawCountIncrease: measurements.append(0)
+            case .thawWithMeasurement: measurements.append(-event.volumeDeltaUL)
+            case .thawCountDecrease: _ = measurements.popLast()
+            // A measured balance supersedes earlier deductions; correcting an older count must not inflate it.
+            case .volumeCorrection: measurements = measurements.map { _ in 0 }
+            default: break
+            }
+        }
+        return measurements.last ?? 0
+    }
     var state: StorageState { StorageState(rawValue: orderedEvents.last(where: { $0.newState != nil })?.newState ?? initialState) ?? .unknown }
     var location: String { orderedEvents.last(where: { $0.newLocation != nil })?.newLocation ?? initialLocation }
     var massUG: Double? { guard let concentrationMgML, let remainingUL else { return nil };return concentrationMgML * remainingUL }
@@ -146,8 +163,16 @@ func quantity(_ text: String, name: String, optional: Bool = false) throws -> Do
         case .thawCountIncrease:
             guard aliquot.countedThaws < Int.max else { throw LabError("The thaw count is already at its maximum.") }
             state = .thawed
+        case .thawWithMeasurement:
+            guard aliquot.countedThaws < Int.max else { throw LabError("The thaw count is already at its maximum.") }
+            if let remaining = aliquot.remainingUL, remaining < concentrationMeasurementVolumeUL {
+                throw LabError("This measurement needs 1.5 µL, but only \(number(remaining)) µL remains. The count and volume were not changed.")
+            }
+            delta = -concentrationMeasurementVolumeUL
+            state = .thawed
         case .thawCountDecrease:
             guard aliquot.countedThaws > 0 else { throw LabError("The thaw count cannot go below zero.") }
+            delta = aliquot.nextThawCorrectionVolumeUL
         case .freeze:
             guard aliquot.state != .frozen else { throw LabError("This aliquot is already marked frozen.") }
             state = .frozen

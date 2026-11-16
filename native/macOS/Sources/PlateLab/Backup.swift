@@ -16,7 +16,7 @@ struct BatchRecord: Codable, Equatable {
 }
 struct SampleBackup: Codable {
     var format = "platelab-samples"
-    var version = 3
+    var version = 4
     var batches: [BatchRecord]
     @MainActor init(batches: [ProteinBatch]) {
         self.batches=batches.map { b in
@@ -29,7 +29,7 @@ struct SampleBackup: Codable {
     }
     func data() throws -> Data { let encoder=JSONEncoder();encoder.outputFormatting=[.prettyPrinted,.sortedKeys];return try encoder.encode(self) }
     func validate() throws {
-        guard format=="platelab-samples",[1,2,3].contains(version) else { throw LabError("This is not a supported PlateLab sample backup.") }
+        guard format=="platelab-samples",[1,2,3,4].contains(version) else { throw LabError("This is not a supported PlateLab sample backup.") }
         var ids=Set<UUID>();var labels=Set<String>()
         func unique(_ id: UUID) throws { guard ids.insert(id).inserted else { throw LabError("The backup contains duplicate record IDs.") } }
         func concentration(_ value: Double?) throws { if let value, !value.isFinite || value < 0 { throw LabError("The backup contains an invalid concentration.") } }
@@ -41,6 +41,7 @@ struct SampleBackup: Codable {
                 guard !clean(a.label).isEmpty, labels.insert(clean(a.label).lowercased()).inserted,a.thaws == nil || a.thaws!>=0 else { throw LabError("An aliquot has an invalid ID or thaw count.") }
                 if let volume=a.volume, !volume.isFinite || volume<0 { throw LabError("An aliquot has an invalid volume.") }
                 var remaining=a.volume;var state=a.state;var sequence=0;var thaws=a.thaws ?? 0
+                var measurements: [Double] = []
                 for e in a.events {
                     try unique(e.id)
                     guard e.sequence==sequence+1,e.delta.isFinite else { throw LabError("The event history has an invalid sequence or volume.") }
@@ -54,17 +55,27 @@ struct SampleBackup: Codable {
                         guard remaining != nil,e.delta<0,e.state==nil,e.location==nil else { throw LabError("Invalid withdrawal history.") }
                     case .volumeCorrection:
                         guard !clean(e.notes).isEmpty,e.state==nil,e.location==nil,remaining != nil || e.volumeAfter != nil else { throw LabError("A volume correction needs a reason and a known result.") }
+                        measurements = measurements.map { _ in 0 }
                     case .thaw:
                         guard state == .frozen,e.state == .thawed,e.delta==0,e.location==nil,thaws<Int.max else { throw LabError("Invalid thaw transition in the backup.") }
                         thaws += 1
+                        measurements.append(0)
                         state = .thawed
                     case .thawCountIncrease:
                         guard version>=3,e.state == .thawed,e.delta==0,e.location==nil,thaws<Int.max else { throw LabError("Invalid thaw counter increase in the backup.") }
                         thaws += 1
+                        measurements.append(0)
+                        state = .thawed
+                    case .thawWithMeasurement:
+                        guard version>=4,e.state == .thawed,e.delta == -concentrationMeasurementVolumeUL,e.location==nil,thaws<Int.max,
+                              remaining == nil || remaining! >= concentrationMeasurementVolumeUL else { throw LabError("Invalid thaw measurement in the backup.") }
+                        thaws += 1
+                        measurements.append(concentrationMeasurementVolumeUL)
                         state = .thawed
                     case .thawCountDecrease:
-                        guard version>=3,e.state==nil,e.delta==0,e.location==nil,thaws>0 else { throw LabError("Invalid thaw counter correction in the backup.") }
+                        guard version>=3,e.state==nil,e.delta == (measurements.last ?? 0),e.location==nil,thaws>0 else { throw LabError("Invalid thaw counter correction in the backup.") }
                         thaws -= 1
+                        _ = measurements.popLast()
                     case .freeze:
                         guard state != .frozen,e.state == .frozen,e.delta==0,e.location==nil else { throw LabError("Invalid freezing transition in the backup.") }
                         state = .frozen
