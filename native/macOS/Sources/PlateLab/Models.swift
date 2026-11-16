@@ -8,6 +8,7 @@ enum StorageState: String, Codable, CaseIterable, Identifiable {
 enum EventKind: String, Codable, CaseIterable {
     case withdrawal = "Withdrawal", freeze = "Frozen", thaw = "Thawed"
     case volumeCorrection = "Volume correction", moved = "Moved"
+    case thawCountIncrease = "Thaw count +1", thawCountDecrease = "Thaw count -1"
 }
 struct LabError: LocalizedError {
     let message: String
@@ -66,8 +67,10 @@ func quantity(_ text: String, name: String, optional: Bool = false) throws -> Do
             event.volumeAfterUL ?? balance.map { max(0, $0 + event.volumeDeltaUL) }
         }
     }
-    var recordedThaws: Int { events.filter { $0.kind == EventKind.thaw.rawValue }.count }
-    var thawLabel: String { startingThawCount.map { String($0 + recordedThaws) } ?? "Unknown + \(recordedThaws) recorded" }
+    var recordedThaws: Int { events.filter { $0.kind == EventKind.thaw.rawValue || $0.kind == EventKind.thawCountIncrease.rawValue }.count }
+    var thawCorrections: Int { events.filter { $0.kind == EventKind.thawCountDecrease.rawValue }.count }
+    var countedThaws: Int { (startingThawCount ?? 0) + (recordedThaws - thawCorrections) }
+    var thawLabel: String { startingThawCount.map { _ in String(countedThaws) } ?? "Unknown + \(countedThaws) recorded" }
     var state: StorageState { StorageState(rawValue: orderedEvents.last(where: { $0.newState != nil })?.newState ?? initialState) ?? .unknown }
     var location: String { orderedEvents.last(where: { $0.newLocation != nil })?.newLocation ?? initialLocation }
     var massUG: Double? { guard let concentrationMgML, let remainingUL else { return nil };return concentrationMgML * remainingUL }
@@ -138,7 +141,13 @@ func quantity(_ text: String, name: String, optional: Bool = false) throws -> Do
             if let remaining=aliquot.remainingUL { delta=amount-remaining } else { volumeAfter=amount }
         case .thaw:
             guard aliquot.state == .frozen else { throw LabError("Only a currently frozen aliquot can be marked thawed. Its starting state may be unknown.") }
+            guard aliquot.countedThaws < Int.max else { throw LabError("The thaw count is already at its maximum.") }
             state = .thawed
+        case .thawCountIncrease:
+            guard aliquot.countedThaws < Int.max else { throw LabError("The thaw count is already at its maximum.") }
+            state = .thawed
+        case .thawCountDecrease:
+            guard aliquot.countedThaws > 0 else { throw LabError("The thaw count cannot go below zero.") }
         case .freeze:
             guard aliquot.state != .frozen else { throw LabError("This aliquot is already marked frozen.") }
             state = .frozen

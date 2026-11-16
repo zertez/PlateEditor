@@ -21,11 +21,12 @@ The tracker opens as one compact table: sample, volume left, concentration, thaw
 
 1. Choose **Add sample** and enter the name and any known values. Each sample represents one tube; protein records are created in the background in the same save. Extra fields are optional.
 2. Choose **Use…** beside a sample, enter the volume used, and see the amount that will remain before saving. Notes are optional.
-3. Click a sample name to see its history. Notes, import sources, and additional protein details expand only when needed. Use the row’s **…** menu to mark frozen/thawed, move storage, adjust volume, or archive the sample.
+3. Use **− / +** in the **Thaws** column to update the count directly. **+** records one thaw and marks the sample thawed, even if a previous refreeze was not logged. **−** records a correction without deleting history or changing the sample’s storage state. Counts cannot go below zero.
+4. Click a sample name to see its history. Notes, import sources, and additional protein details expand only when needed. Use the row’s **…** menu to mark refrozen, move storage, adjust volume, or archive the sample.
 
-Each tube has independent volume and thaw history. Marking a frozen tube thawed adds one thaw; refreezing does not add another. Unknown previous history stays unknown. Remaining protein mass is calculated as volume (µL) × concentration (mg/mL), in µg.
+Each tube has independent volume and thaw history. Refreezing does not add a thaw. Unknown previous history stays unknown: the counter shows only newly recorded thaws alongside a question mark. The Add sample form also has − / + controls for its starting count. Remaining protein mass is calculated as volume (µL) × concentration (mg/mL), in µg.
 
-Leave the volume blank when it is unknown. The app preserves that distinction from zero and requires a measured volume before recording withdrawals. Use **Adjust volume** with a reason to establish the first known balance. Imported history can retain undated events or dates without an invented time. Sample backup version 2 preserves these fields; version 1 backups remain readable.
+Leave the volume blank when it is unknown. The app preserves that distinction from zero and requires a measured volume before recording withdrawals. Use **Adjust volume** with a reason to establish the first known balance. Imported history can retain undated events or dates without an invented time. Sample backup version 3 includes counter changes; version 1 and 2 backups remain readable. CSV exports include the corrected current thaw count.
 
 ## Plates and sample usage
 

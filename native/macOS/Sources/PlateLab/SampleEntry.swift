@@ -44,7 +44,15 @@ struct AddSampleForm: View {
                 SampleInput(title: "Concentration (mg/mL)", text: $concentration)
             }
             HStack(spacing: 16) {
-                SampleInput(title: "Thaws so far", text: $thaws)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Thaws so far").font(.callout).foregroundStyle(.secondary)
+                    HStack(spacing: 8) {
+                        TextField("Unknown", text: $thaws).textFieldStyle(.roundedBorder).controlSize(.large)
+                            .accessibilityLabel("Thaws so far")
+                        CounterButtons(value: clean(thaws).isEmpty ? 0 : Int(clean(thaws)),
+                                       decrease: { changeStartingThaws(-1) }, increase: { changeStartingThaws(1) })
+                    }
+                }.frame(maxWidth: .infinity, alignment: .leading)
                 SampleInput(title: "Location", text: $location, placeholder: "Freezer / box / position")
             }
             DisclosureGroup("More details", isExpanded: $more) {
@@ -85,6 +93,11 @@ struct AddSampleForm: View {
             dismiss()
         } catch { self.error = error.localizedDescription }
     }
+    private func changeStartingThaws(_ delta: Int) {
+        let value = clean(thaws).isEmpty ? 0 : Int(clean(thaws))
+        guard let value, value >= 0, delta < 0 ? value > 0 : value < Int.max else { return }
+        thaws = String(value + delta)
+    }
 }
 
 struct EventForm: View {
@@ -110,6 +123,8 @@ struct EventForm: View {
         case .moved: "Move \(aliquot.label)"
         case .freeze: "Freeze \(aliquot.label)"
         case .thaw: "Thaw \(aliquot.label)"
+        case .thawCountIncrease: "Add a thaw · \(aliquot.label)"
+        case .thawCountDecrease: "Correct thaw count · \(aliquot.label)"
         }
     }
     private var remainingAfter: Double? {

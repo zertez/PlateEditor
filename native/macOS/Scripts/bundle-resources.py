@@ -20,7 +20,7 @@ for source in files:
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source, target)
 info = dict(CFBundleName='PlateLab', CFBundleDisplayName='PlateLab', CFBundleIdentifier='no.zertez.PlateLab',
-            CFBundleVersion='4', CFBundleShortVersionString='0.1.3', CFBundleExecutable='PlateLab',
+            CFBundleVersion='5', CFBundleShortVersionString='0.1.4', CFBundleExecutable='PlateLab',
             CFBundlePackageType='APPL', LSMinimumSystemVersion='14.0', NSHighResolutionCapable=True,
             NSPrincipalClass='NSApplication', LSApplicationCategoryType='public.app-category.productivity')
 with (app / 'Contents/Info.plist').open('wb') as f:

@@ -16,7 +16,7 @@ struct BatchRecord: Codable, Equatable {
 }
 struct SampleBackup: Codable {
     var format = "platelab-samples"
-    var version = 2
+    var version = 3
     var batches: [BatchRecord]
     @MainActor init(batches: [ProteinBatch]) {
         self.batches=batches.map { b in
@@ -29,7 +29,7 @@ struct SampleBackup: Codable {
     }
     func data() throws -> Data { let encoder=JSONEncoder();encoder.outputFormatting=[.prettyPrinted,.sortedKeys];return try encoder.encode(self) }
     func validate() throws {
-        guard format=="platelab-samples",[1,2].contains(version) else { throw LabError("This is not a supported PlateLab sample backup.") }
+        guard format=="platelab-samples",[1,2,3].contains(version) else { throw LabError("This is not a supported PlateLab sample backup.") }
         var ids=Set<UUID>();var labels=Set<String>()
         func unique(_ id: UUID) throws { guard ids.insert(id).inserted else { throw LabError("The backup contains duplicate record IDs.") } }
         func concentration(_ value: Double?) throws { if let value, !value.isFinite || value < 0 { throw LabError("The backup contains an invalid concentration.") } }
@@ -40,7 +40,7 @@ struct SampleBackup: Codable {
                 try unique(a.id);try concentration(a.concentration)
                 guard !clean(a.label).isEmpty, labels.insert(clean(a.label).lowercased()).inserted,a.thaws == nil || a.thaws!>=0 else { throw LabError("An aliquot has an invalid ID or thaw count.") }
                 if let volume=a.volume, !volume.isFinite || volume<0 { throw LabError("An aliquot has an invalid volume.") }
-                var remaining=a.volume;var state=a.state;var sequence=0
+                var remaining=a.volume;var state=a.state;var sequence=0;var thaws=a.thaws ?? 0
                 for e in a.events {
                     try unique(e.id)
                     guard e.sequence==sequence+1,e.delta.isFinite else { throw LabError("The event history has an invalid sequence or volume.") }
@@ -55,8 +55,16 @@ struct SampleBackup: Codable {
                     case .volumeCorrection:
                         guard !clean(e.notes).isEmpty,e.state==nil,e.location==nil,remaining != nil || e.volumeAfter != nil else { throw LabError("A volume correction needs a reason and a known result.") }
                     case .thaw:
-                        guard state == .frozen,e.state == .thawed,e.delta==0,e.location==nil else { throw LabError("Invalid thaw transition in the backup.") }
+                        guard state == .frozen,e.state == .thawed,e.delta==0,e.location==nil,thaws<Int.max else { throw LabError("Invalid thaw transition in the backup.") }
+                        thaws += 1
                         state = .thawed
+                    case .thawCountIncrease:
+                        guard version>=3,e.state == .thawed,e.delta==0,e.location==nil,thaws<Int.max else { throw LabError("Invalid thaw counter increase in the backup.") }
+                        thaws += 1
+                        state = .thawed
+                    case .thawCountDecrease:
+                        guard version>=3,e.state==nil,e.delta==0,e.location==nil,thaws>0 else { throw LabError("Invalid thaw counter correction in the backup.") }
+                        thaws -= 1
                     case .freeze:
                         guard state != .frozen,e.state == .frozen,e.delta==0,e.location==nil else { throw LabError("Invalid freezing transition in the backup.") }
                         state = .frozen
@@ -80,7 +88,7 @@ struct SampleBackup: Codable {
             }
             return true
         }
-        var combined=self;combined.batches=current.batches+incoming;try combined.validate()
+        var combined=self;combined.version=current.version;combined.batches=current.batches+incoming;try combined.validate()
         for b in incoming {
             let batch=ProteinBatch(id:b.id,name:b.name,variant:b.variant,batchLabel:b.batchLabel,preparedOn:b.prepared,concentration:b.concentration,buffer:b.buffer,notes:b.notes,createdAt:b.created);context.insert(batch)
             for a in b.aliquots {
