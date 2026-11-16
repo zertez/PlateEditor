@@ -16,6 +16,7 @@ struct SampleInput: View {
 }
 
 struct AddSampleForm: View {
+    @AppStorage("proteinConcentrationDisplayUnit") private var concentrationUnit: ProteinConcentrationUnit = .milligramsPerMilliliter
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
@@ -41,7 +42,7 @@ struct AddSampleForm: View {
             }
             HStack(spacing: 16) {
                 SampleInput(title: "Volume left (µL)", text: $volume)
-                SampleInput(title: "Concentration (mg/mL)", text: $concentration)
+                SampleInput(title: "Concentration (\(concentrationUnit.rawValue))", text: $concentration)
             }
             HStack(spacing: 16) {
                 VStack(alignment: .leading, spacing: 6) {

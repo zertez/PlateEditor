@@ -10,6 +10,7 @@ struct SampleLibraryView: View {
     @State private var showArchived = false
     @State private var sheet: SampleSheet?
     @AppStorage("proteinMassDisplayUnit") private var massUnit: ProteinMassUnit = .automatic
+    @AppStorage("proteinConcentrationDisplayUnit") private var concentrationUnit: ProteinConcentrationUnit = .milligramsPerMilliliter
 
     private var matching: [Aliquot] {
         aliquots.filter {
@@ -21,34 +22,46 @@ struct SampleLibraryView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 16) {
-                Text("Protein samples").font(.title2.weight(.semibold))
-                Text("\(matching.count)").foregroundStyle(.secondary)
-                Spacer()
-                HStack(spacing: 6) {
-                    Text("Protein left").font(.callout).foregroundStyle(.secondary)
-                    Picker("Protein amount units", selection: $massUnit) {
-                        ForEach(ProteinMassUnit.allCases) { Text($0.rawValue).tag($0) }
-                    }.labelsHidden().pickerStyle(.segmented).frame(width: 132).controlSize(.small)
-                        .help("Choose µg or mg for every sample, or Auto. 1 mg = 1,000 µg.")
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 16) {
+                    Text("Protein samples").font(.title2.weight(.semibold))
+                    Text("\(matching.count)").foregroundStyle(.secondary)
+                    Spacer()
+                    HStack(spacing: 7) {
+                        Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                        TextField("Find a sample", text: $search).textFieldStyle(.plain)
+                    }
+                    .padding(.horizontal, 10).padding(.vertical, 7)
+                    .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 7))
+                    .frame(width: 200)
+                    Button { sheet = .add } label: { Label("Add sample", systemImage: "plus") }
+                        .buttonStyle(.borderedProminent)
+                    Menu {
+                        Toggle("Show archived samples", isOn: $showArchived)
+                        Divider()
+                        Button("Export samples…", action: app.exportCSV)
+                        Button("Save backup…", action: app.exportSamples)
+                        Button("Import backup…", action: app.importSamples)
+                    } label: { Image(systemName: "ellipsis") }
+                    .menuStyle(.borderlessButton).fixedSize().help("Library options")
                 }
-                HStack(spacing: 7) {
-                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                    TextField("Find a sample", text: $search).textFieldStyle(.plain)
+                HStack(spacing: 24) {
+                    HStack(spacing: 6) {
+                        Text("Concentration").font(.callout).foregroundStyle(.secondary)
+                        Picker("Concentration units", selection: $concentrationUnit) {
+                            ForEach(ProteinConcentrationUnit.allCases) { Text($0.rawValue).tag($0) }
+                        }.labelsHidden().pickerStyle(.segmented).frame(width: 158).controlSize(.small)
+                            .help("1 mg/mL = 1 µg/µL. The number stays the same; your preferred unit label is remembered.")
+                    }
+                    HStack(spacing: 6) {
+                        Text("Protein left").font(.callout).foregroundStyle(.secondary)
+                        Picker("Protein amount units", selection: $massUnit) {
+                            ForEach(ProteinMassUnit.allCases) { Text($0.rawValue).tag($0) }
+                        }.labelsHidden().pickerStyle(.segmented).frame(width: 132).controlSize(.small)
+                            .help("Choose µg or mg for every sample, or Auto. 1 mg = 1,000 µg.")
+                    }
+                    Spacer()
                 }
-                .padding(.horizontal, 10).padding(.vertical, 7)
-                .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 7))
-                .frame(width: 200)
-                Button { sheet = .add } label: { Label("Add sample", systemImage: "plus") }
-                    .buttonStyle(.borderedProminent)
-                Menu {
-                    Toggle("Show archived samples", isOn: $showArchived)
-                    Divider()
-                    Button("Export samples…", action: app.exportCSV)
-                    Button("Save backup…", action: app.exportSamples)
-                    Button("Import backup…", action: app.importSamples)
-                } label: { Image(systemName: "ellipsis") }
-                .menuStyle(.borderlessButton).fixedSize().help("Library options")
             }.padding(.horizontal, 22).padding(.vertical, 18)
             Divider()
             if aliquots.isEmpty {
@@ -76,7 +89,7 @@ struct SampleLibraryView: View {
                     TableColumn("Left (µL)") { a in
                         EditableSampleValue(sample: a, field: .volume)
                     }.width(min: 85, ideal: 105, max: 130)
-                    TableColumn("Conc. (mg/mL)") { a in
+                    TableColumn("Conc. (\(concentrationUnit.rawValue))") { a in
                         EditableSampleValue(sample: a, field: .concentration)
                     }.width(min: 105, ideal: 120, max: 150)
                     TableColumn("Protein left") { a in
@@ -221,6 +234,7 @@ private struct ThawCounter: View {
 
 struct SampleDetailsView: View {
     @AppStorage("proteinMassDisplayUnit") private var massUnit: ProteinMassUnit = .automatic
+    @AppStorage("proteinConcentrationDisplayUnit") private var concentrationUnit: ProteinConcentrationUnit = .milligramsPerMilliliter
     @Environment(\.dismiss) private var dismiss
     let aliquot: Aliquot
     @State private var showNotes = false
@@ -243,7 +257,7 @@ struct SampleDetailsView: View {
                 VStack(alignment: .leading, spacing: 20) {
                     HStack(spacing: 30) {
                         detail("Remaining", volumeLabel(aliquot.remainingUL))
-                        detail("Concentration", aliquot.currentConcentrationMgML.map { "\(number($0)) mg/mL" } ?? "Not recorded")
+                        detail("Concentration", aliquot.currentConcentrationMgML.map { "\(number($0)) \(concentrationUnit.rawValue)" } ?? "Not recorded")
                         VStack(alignment: .leading, spacing: 6) {
                             Text("Thaws").font(.caption).foregroundStyle(.secondary)
                             ThawCounter(aliquot: aliquot)
@@ -297,11 +311,12 @@ struct SampleDetailsView: View {
 }
 
 private struct HistoryRow: View {
+    @AppStorage("proteinConcentrationDisplayUnit") private var concentrationUnit: ProteinConcentrationUnit = .milligramsPerMilliliter
     let event: SampleEvent
     @State private var expanded = false
     private var title: String {
         if let after = event.valueAfter {
-            let unit = event.kind == EventKind.concentrationCorrection.rawValue ? "mg/mL" : "µL"
+            let unit = event.kind == EventKind.concentrationCorrection.rawValue ? concentrationUnit.rawValue : "µL"
             let name = event.kind == EventKind.concentrationCorrection.rawValue ? "Concentration" : "Volume"
             return "\(name): \(event.valueBefore.map(number) ?? "Unknown") → \(number(after)) \(unit)"
         }

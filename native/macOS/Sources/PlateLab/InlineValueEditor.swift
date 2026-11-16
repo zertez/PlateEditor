@@ -8,9 +8,12 @@ struct SampleValueEdit: Identifiable {
 }
 
 struct EditableSampleValue: View {
+    @AppStorage("proteinConcentrationDisplayUnit") private var concentrationUnit: ProteinConcentrationUnit = .milligramsPerMilliliter
     @EnvironmentObject var app: AppState
     let sample: Aliquot
     let field: SampleValueField
+
+    private var displayedUnit: String { field.unit(concentration: concentrationUnit) }
 
     var body: some View {
         Text(field.value(in: sample).map(number) ?? "—")
@@ -19,7 +22,7 @@ struct EditableSampleValue: View {
             .contentShape(Rectangle())
             .onTapGesture(count: 2, perform: openEditor)
             .accessibilityAction(named: Text("Edit value"), openEditor)
-            .accessibilityLabel("\(field.title) for \(sample.label), \(field.unit)")
+            .accessibilityLabel("\(field.title) for \(sample.label), \(displayedUnit)")
             .accessibilityValue(field.value(in: sample).map(number) ?? "Unknown")
             .help("Double-click to open the editor. Return moves to the reason for change. Escape cancels.")
     }
@@ -32,6 +35,7 @@ struct EditableSampleValue: View {
 
 // One centered dialog keeps the value and reason together during the slide.
 struct SampleValueEditor: View {
+    @AppStorage("proteinConcentrationDisplayUnit") private var concentrationUnit: ProteinConcentrationUnit = .milligramsPerMilliliter
     @Environment(\.modelContext) private var context
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let sample: Aliquot
@@ -54,6 +58,8 @@ struct SampleValueEditor: View {
         _expected = State(initialValue: value)
         _draft = State(initialValue: value.map(editableNumber) ?? "")
     }
+
+    private var displayedUnit: String { field.unit(concentration: concentrationUnit) }
 
     private var pageTransition: AnyTransition {
         if reduceMotion { return .opacity }
@@ -104,14 +110,14 @@ struct SampleValueEditor: View {
     private var valuePage: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Edit \(field.rawValue)").font(.headline)
-            Text(field == .volume ? "Total remaining in this tube (\(field.unit))" : "Concentration in this tube (\(field.unit))")
+            Text(field == .volume ? "Total remaining in this tube (\(displayedUnit))" : "Concentration in this tube (\(displayedUnit))")
                 .font(.callout).foregroundStyle(.secondary)
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 TextField("New \(field.rawValue)", text: $draft)
                     .textFieldStyle(.plain).font(.title3.weight(.medium)).monospacedDigit()
                     .focused($focused, equals: .value).onSubmit(advance)
-                    .accessibilityLabel("New \(field.rawValue), \(field.unit)")
-                Text(field.unit).font(.callout).foregroundStyle(.secondary)
+                    .accessibilityLabel("New \(field.rawValue), \(displayedUnit)")
+                Text(displayedUnit).font(.callout).foregroundStyle(.secondary)
             }
             .padding(11).background(Color.teal.opacity(0.06), in: RoundedRectangle(cornerRadius: 9))
             .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Color.teal.opacity(0.3)))
@@ -122,7 +128,7 @@ struct SampleValueEditor: View {
     private var reasonPage: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Reason for change").font(.headline)
-            Text("\(field.title): \(expected.map(number) ?? "Unknown") → \(proposed.map(number) ?? "—") \(field.unit)")
+            Text("\(field.title): \(expected.map(number) ?? "Unknown") → \(proposed.map(number) ?? "—") \(displayedUnit)")
                 .font(.callout).foregroundStyle(.secondary).lineLimit(2)
             TextField("e.g. Took out sample for enzymatic assay", text: $reason)
                 .textFieldStyle(.plain).focused($focused, equals: .reason).onSubmit(save)

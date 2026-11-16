@@ -2,6 +2,7 @@ import SwiftUI
 import SwiftData
 
 struct BatchForm: View {
+    @AppStorage("proteinConcentrationDisplayUnit") private var concentrationUnit: ProteinConcentrationUnit = .milligramsPerMilliliter
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
     var editing: ProteinBatch?
@@ -15,7 +16,7 @@ struct BatchForm: View {
                 TextField("Protein name",text:$name)
                 TextField("Variant / construct",text:$variant,prompt:Text("e.g. Cut CSE"))
                 TextField("Batch ID",text:$batchLabel)
-                TextField("Concentration (mg/mL, optional)",text:$concentration)
+                TextField("Concentration (\(concentrationUnit.rawValue), optional)",text:$concentration)
                 TextField("Buffer",text:$buffer)
                 Toggle("Record preparation date",isOn:$hasDate)
                 if hasDate { DatePicker("Prepared on",selection:$prepared,displayedComponents:.date) }

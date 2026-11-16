@@ -14,10 +14,15 @@ enum EventKind: String, Codable, CaseIterable {
     case thawWithMeasurement = "Thaw and concentration measurement"
     case concentrationCorrection = "Concentration change"
 }
+// These units are numerically equivalent: 1 mg/mL = 1 µg/µL.
+enum ProteinConcentrationUnit: String, CaseIterable, Identifiable {
+    case milligramsPerMilliliter = "mg/mL", microgramsPerMicroliter = "µg/µL"
+    var id: String { rawValue }
+}
 enum SampleValueField: String {
     case volume, concentration
     var title: String { self == .volume ? "Volume" : "Concentration" }
-    var unit: String { self == .volume ? "µL" : "mg/mL" }
+    func unit(concentration: ProteinConcentrationUnit) -> String { self == .volume ? "µL" : concentration.rawValue }
     func value(in sample: Aliquot) -> Double? { self == .volume ? sample.remainingUL : sample.currentConcentrationMgML }
 }
 struct LabError: LocalizedError {
