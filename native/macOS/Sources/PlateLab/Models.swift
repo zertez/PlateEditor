@@ -35,6 +35,10 @@ func editedQuantity(_ draft: String, original: Double?, name: String, optional: 
     if let original, clean(draft) == editableNumber(original) { return original }
     return try quantity(draft, name: name, optional: optional)
 }
+func proteinMassLabel(_ micrograms: Double?) -> String {
+    guard let micrograms else { return "—" }
+    return micrograms >= 1000 ? "\(number(micrograms / 1000)) mg" : "\(number(micrograms)) µg"
+}
 func volumeLabel(_ value: Double?) -> String { value.map { "\(number($0)) µL" } ?? "Unknown volume" }
 func clean(_ text: String) -> String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
 func quantity(_ text: String, name: String, optional: Bool = false) throws -> Double? {

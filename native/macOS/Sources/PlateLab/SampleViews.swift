@@ -71,6 +71,14 @@ struct SampleLibraryView: View {
                     TableColumn("Conc. (mg/mL)") { a in
                         EditableSampleValue(sample: a, field: .concentration)
                     }.width(min: 105, ideal: 120, max: 150)
+                    TableColumn("Protein left") { a in
+                        Text(proteinMassLabel(a.massUG)).monospacedDigit()
+                            .accessibilityLabel("Protein left for \(a.label)")
+                            .accessibilityValue(proteinMassLabel(a.massUG))
+                            .help(a.massUG == nil
+                                  ? "Enter both remaining volume and concentration to calculate the protein amount."
+                                  : "Calculated from remaining volume × concentration. Updates automatically when either value changes.")
+                    }.width(min: 110, ideal: 125, max: 150)
                     TableColumn("Thaws") { a in
                         ThawCounter(aliquot: a)
                     }.width(min: 130, ideal: 145, max: 180)
@@ -259,7 +267,7 @@ struct SampleDetailsView: View {
                         VStack(alignment: .leading, spacing: 12) {
                             LabeledContent("State", value: aliquot.state.rawValue)
                             LabeledContent("Location", value: aliquot.location.isEmpty ? "Not recorded" : aliquot.location)
-                            if let mass = aliquot.massUG { LabeledContent("Protein remaining", value: "\(number(mass)) µg") }
+                            if let mass = aliquot.massUG { LabeledContent("Protein remaining", value: proteinMassLabel(mass)) }
                             if let buffer = aliquot.batch?.buffer, !buffer.isEmpty { LabeledContent("Buffer", value: buffer) }
                             if let date = aliquot.batch?.preparedOn { LabeledContent("Prepared", value: date.formatted(date: .abbreviated, time: .omitted)) }
                             if aliquot.startingThawCount == nil { Text("Earlier thaw history is unknown.").foregroundStyle(.secondary) }

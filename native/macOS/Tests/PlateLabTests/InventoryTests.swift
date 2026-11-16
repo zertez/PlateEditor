@@ -3,6 +3,15 @@ import SwiftData
 @testable import PlateLab
 
 final class InventoryTests: XCTestCase {
+    func testProteinMassDisplayConvertsMilligramsAndKeepsUnknownSeparateFromZero() {
+        XCTAssertEqual(proteinMassLabel(nil), "—")
+        XCTAssertEqual(proteinMassLabel(0), "\(number(0)) µg")
+        XCTAssertEqual(proteinMassLabel(483.84 * 0.76), "\(number(367.7184)) µg")
+        XCTAssertEqual(proteinMassLabel(999.999), "\(number(999.999)) µg")
+        XCTAssertEqual(proteinMassLabel(1000), "\(number(1)) mg")
+        XCTAssertEqual(proteinMassLabel(593.09 * 4.18), "\(number(2.4791162)) mg")
+    }
+
     func testThreeDecimalPlaceInputsPreserveUntouchedMeasurements() throws {
         let stored = 483.84000000000003
         XCTAssertEqual(editableNumber(stored), "483.840")
