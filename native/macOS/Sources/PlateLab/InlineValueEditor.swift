@@ -4,7 +4,15 @@ import SwiftData
 struct SampleValueEdit: Identifiable {
     let id = UUID()
     let sample: Aliquot
-    let field: SampleValueField
+    let action: SampleEditAction
+}
+
+enum SampleEditAction: Equatable {
+    case value(SampleValueField), withdrawal
+    var field: SampleValueField {
+        if case .value(let field) = self { return field }
+        return .volume
+    }
 }
 
 struct EditableSampleValue: View {
@@ -29,7 +37,7 @@ struct EditableSampleValue: View {
 
     private func openEditor() {
         guard !sample.archived else { return }
-        app.valueEdit = SampleValueEdit(sample: sample, field: field)
+        app.valueEdit = SampleValueEdit(sample: sample, action: .value(field))
     }
 }
 
@@ -39,7 +47,7 @@ struct SampleValueEditor: View {
     @Environment(\.modelContext) private var context
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let sample: Aliquot
-    let field: SampleValueField
+    let action: SampleEditAction
     let close: () -> Void
     @State private var expected: Double?
     @State private var draft: String
@@ -52,14 +60,22 @@ struct SampleValueEditor: View {
 
     private enum Step: Hashable { case value, reason }
 
-    init(sample: Aliquot, field: SampleValueField, close: @escaping () -> Void) {
-        self.sample = sample; self.field = field; self.close = close
-        let value = field.value(in: sample)
+    init(sample: Aliquot, action: SampleEditAction, close: @escaping () -> Void) {
+        self.sample = sample; self.action = action; self.close = close
+        let value = action.field.value(in: sample)
         _expected = State(initialValue: value)
-        _draft = State(initialValue: value.map(editableNumber) ?? "")
+        _draft = State(initialValue: action == .withdrawal ? "" : value.map(editableNumber) ?? "")
     }
 
+    private var field: SampleValueField { action.field }
+    private var isWithdrawal: Bool { action == .withdrawal }
     private var displayedUnit: String { field.unit(concentration: concentrationUnit) }
+    private var changeSummary: String {
+        if isWithdrawal, let expected, let proposed {
+            return "Taking out \(number(proposed)) µL · \(number(expected - proposed)) µL will remain"
+        }
+        return "\(field.title): \(expected.map(number) ?? "Unknown") → \(proposed.map(number) ?? "—") \(displayedUnit)"
+    }
 
     private var pageTransition: AnyTransition {
         if reduceMotion { return .opacity }
@@ -96,7 +112,7 @@ struct SampleValueEditor: View {
                 Spacer()
                 if step == .reason {
                     Button { changeStep(to: .value) } label: { Label("Back", systemImage: "chevron.left") }
-                    Button("Save change", action: save).buttonStyle(.borderedProminent)
+                    Button(isWithdrawal ? "Log withdrawal" : "Save change", action: save).buttonStyle(.borderedProminent)
                         .keyboardShortcut(.defaultAction).disabled(clean(reason).isEmpty)
                 } else {
                     Button(action: advance) { HStack(spacing: 6) { Text("Next"); Image(systemName: "chevron.right") } }
@@ -109,14 +125,14 @@ struct SampleValueEditor: View {
 
     private var valuePage: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Edit \(field.rawValue)").font(.headline)
-            Text(field == .volume ? "Total remaining in this tube (\(displayedUnit))" : "Concentration in this tube (\(displayedUnit))")
+            Text(isWithdrawal ? "How much did you take out?" : "Edit \(field.rawValue)").font(.headline)
+            Text(isWithdrawal ? "Enter this withdrawal · \(volumeLabel(expected)) available" : field == .volume ? "Total remaining in this tube (\(displayedUnit))" : "Concentration in this tube (\(displayedUnit))")
                 .font(.callout).foregroundStyle(.secondary)
             HStack(alignment: .firstTextBaseline, spacing: 10) {
-                TextField("New \(field.rawValue)", text: $draft)
+                TextField(isWithdrawal ? "Amount taken out" : "New \(field.rawValue)", text: $draft)
                     .textFieldStyle(.plain).font(.title3.weight(.medium)).monospacedDigit()
                     .focused($focused, equals: .value).onSubmit(advance)
-                    .accessibilityLabel("New \(field.rawValue), \(displayedUnit)")
+                    .accessibilityLabel(isWithdrawal ? "Amount taken out, µL" : "New \(field.rawValue), \(displayedUnit)")
                 Text(displayedUnit).font(.callout).foregroundStyle(.secondary)
             }
             .padding(11).background(Color.teal.opacity(0.06), in: RoundedRectangle(cornerRadius: 9))
@@ -128,7 +144,7 @@ struct SampleValueEditor: View {
     private var reasonPage: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Reason for change").font(.headline)
-            Text("\(field.title): \(expected.map(number) ?? "Unknown") → \(proposed.map(number) ?? "—") \(displayedUnit)")
+            Text(changeSummary)
                 .font(.callout).foregroundStyle(.secondary).lineLimit(2)
             TextField("e.g. Took out sample for enzymatic assay", text: $reason)
                 .textFieldStyle(.plain).focused($focused, equals: .reason).onSubmit(save)
@@ -141,8 +157,12 @@ struct SampleValueEditor: View {
 
     private func advance() {
         do {
-            guard let value = try editedQuantity(draft, original: expected, name: field.rawValue) else { return }
-            guard value != expected else { close(); return }
+            guard let value = try editedQuantity(draft, original: isWithdrawal ? nil : expected, name: isWithdrawal ? "amount taken out" : field.rawValue) else { return }
+            if isWithdrawal {
+                guard value > 0 else { throw LabError("Enter an amount greater than zero.") }
+                guard let expected else { throw LabError("Record the remaining volume before taking out a sample.") }
+                guard value <= expected else { throw LabError("Only \(number(expected)) µL remains in this tube.") }
+            } else if value == expected { close(); return }
             proposed = value
             changeStep(to: .reason)
         } catch { self.error = error.localizedDescription }
@@ -159,7 +179,11 @@ struct SampleValueEditor: View {
     private func save() {
         guard step == .reason, let proposed, !clean(reason).isEmpty else { return }
         do {
-            try Inventory.changeValue(field, for: sample, to: proposed, expected: expected, reason: reason, in: context)
+            if isWithdrawal {
+                try Inventory.withdraw(proposed, from: sample, expectedVolume: expected, reason: reason, in: context)
+            } else {
+                try Inventory.changeValue(field, for: sample, to: proposed, expected: expected, reason: reason, in: context)
+            }
             close()
         } catch { self.error = error.localizedDescription }
     }

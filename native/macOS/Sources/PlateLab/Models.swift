@@ -125,6 +125,25 @@ func quantity(_ text: String, name: String, optional: Bool = false) throws -> Do
     var state: StorageState { StorageState(rawValue: orderedEvents.last(where: { $0.newState != nil })?.newState ?? initialState) ?? .unknown }
     var location: String { orderedEvents.last(where: { $0.newLocation != nil })?.newLocation ?? initialLocation }
     var massUG: Double? { guard let concentration = currentConcentrationMgML, let remainingUL else { return nil };return concentration * remainingUL }
+    func takenOutUL(on day: Date, calendar: Calendar = .current) -> Double {
+        // Count actual usage, not measured balance corrections. A refunded thaw
+        // measurement belongs to its original day, even if corrected later.
+        var thaws: [SampleEvent] = []
+        var refunded = Set<UUID>()
+        for event in orderedEvents {
+            switch EventKind(rawValue: event.kind) {
+            case .thaw, .thawCountIncrease, .thawWithMeasurement: thaws.append(event)
+            case .thawCountDecrease:
+                if let original = thaws.popLast(), event.volumeDeltaUL > 0 { refunded.insert(original.id) }
+            default: break
+            }
+        }
+        return events.reduce(0) { total, event in
+            guard [EventKind.withdrawal.rawValue, EventKind.thawWithMeasurement.rawValue].contains(event.kind),
+                  !refunded.contains(event.id), let date = event.date, calendar.isDate(date, inSameDayAs: day) else { return total }
+            return total - event.volumeDeltaUL
+        }
+    }
 }
 @Model final class SampleEvent {
     @Attribute(.unique) var id: UUID
@@ -233,6 +252,11 @@ func quantity(_ text: String, name: String, optional: Bool = false) throws -> Do
         guard !clean(reason).isEmpty else { throw LabError("Enter a reason for the change.") }
         guard expected != value else { return }
         try record(field == .volume ? .volumeCorrection : .concentrationCorrection, for: sample, amount: value, notes: reason, in: context)
+    }
+    static func withdraw(_ amount: Double, from sample: Aliquot, expectedVolume: Double?, reason: String, in context: ModelContext) throws {
+        guard sample.remainingUL == expectedVolume else { throw LabError("The remaining volume changed while you were entering this withdrawal. Cancel and enter it again.") }
+        guard !clean(reason).isEmpty else { throw LabError("Enter a reason for taking out the sample.") }
+        try record(.withdrawal, for: sample, amount: amount, notes: reason, in: context)
     }
     static func save(_ context: ModelContext) throws {
         do { try context.save() } catch { context.rollback(); throw error }

@@ -78,7 +78,7 @@ struct RootView: View {
                     Color.black.opacity(0.12).ignoresSafeArea()
                         .contentShape(Rectangle()).onTapGesture { }
                         .accessibilityHidden(true)
-                    SampleValueEditor(sample: edit.sample, field: edit.field) { app.valueEdit = nil }
+                    SampleValueEditor(sample: edit.sample, action: edit.action) { app.valueEdit = nil }
                         .id(edit.id)
                         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
                         .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(.white.opacity(0.7)))

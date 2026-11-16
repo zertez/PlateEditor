@@ -3,6 +3,84 @@ import SwiftData
 @testable import PlateLab
 
 final class InventoryTests: XCTestCase {
+    @MainActor func testQuickWithdrawalLogsReasonTimeAndUpdatesBalanceAndMassOnce() throws {
+        let (app, batch, sample) = try fixture()
+        let before = Date()
+        try Inventory.withdraw(12.3456, from: sample, expectedVolume: 100, reason: "  Enzymatic assay  ", in: app.container.mainContext)
+        XCTAssertEqual(try XCTUnwrap(sample.remainingUL), 87.6544, accuracy: 0.0000001)
+        XCTAssertEqual(try XCTUnwrap(sample.massUG), 175.3088, accuracy: 0.0000001)
+        XCTAssertEqual(sample.countedThaws, 0)
+        XCTAssertEqual(sample.events.count, 1)
+        let event = try XCTUnwrap(sample.events.first)
+        XCTAssertEqual(event.kind, EventKind.withdrawal.rawValue)
+        XCTAssertEqual(event.notes, "Enzymatic assay")
+        XCTAssertEqual(event.volumeDeltaUL, -12.3456)
+        XCTAssertTrue(try XCTUnwrap(event.date) >= before)
+        XCTAssertFalse(event.dateOnly)
+        XCTAssertEqual(sample.takenOutUL(on: try XCTUnwrap(event.date)), 12.3456)
+        XCTAssertThrowsError(try Inventory.withdraw(12.3456, from: sample, expectedVolume: 100, reason: "Duplicate save", in: app.container.mainContext))
+        XCTAssertEqual(sample.events.count, 1)
+        let backup = try JSONDecoder().decode(SampleBackup.self, from: SampleBackup(batches: [batch]).data())
+        let restored = try AppState(directory: FileManager.default.temporaryDirectory, memory: true)
+        _ = try backup.merge(into: restored.container.mainContext)
+        let copy = try XCTUnwrap(restored.container.mainContext.fetch(FetchDescriptor<Aliquot>()).first)
+        XCTAssertEqual(copy.remainingUL, sample.remainingUL)
+        XCTAssertEqual(copy.takenOutUL(on: try XCTUnwrap(event.date)), 12.3456)
+        XCTAssertEqual(copy.events.first?.notes, "Enzymatic assay")
+    }
+
+    @MainActor func testQuickWithdrawalRejectsInvalidAmountsReasonsAndUnavailableSamples() throws {
+        let (app, _, sample) = try fixture()
+        let context = app.container.mainContext
+        for amount in [0, -1, 101, .nan, .infinity] {
+            XCTAssertThrowsError(try Inventory.withdraw(amount, from: sample, expectedVolume: 100, reason: "Assay", in: context))
+        }
+        XCTAssertThrowsError(try Inventory.withdraw(10, from: sample, expectedVolume: 100, reason: "  ", in: context))
+        sample.archived = true
+        XCTAssertThrowsError(try Inventory.withdraw(10, from: sample, expectedVolume: 100, reason: "Assay", in: context))
+        sample.archived = false; sample.startingVolumeUL = nil
+        XCTAssertThrowsError(try Inventory.withdraw(10, from: sample, expectedVolume: nil, reason: "Assay", in: context))
+        XCTAssertTrue(sample.events.isEmpty)
+        sample.startingVolumeUL = 100
+        try Inventory.withdraw(100, from: sample, expectedVolume: 100, reason: "Used the remaining tube", in: context)
+        XCTAssertEqual(sample.remainingUL, 0)
+        XCTAssertEqual(sample.takenOutUL(on: Date()), 100)
+    }
+
+    @MainActor func testDailyUseFollowsLocalDaysAndRefundsOriginalMeasurementDay() throws {
+        let (app, _, sample) = try fixture()
+        let context = app.container.mainContext
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Europe/Oslo"))
+        let today = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 11, day: 16, hour: 12)))
+        let midnight = calendar.startOfDay(for: today)
+        let tomorrow = try XCTUnwrap(calendar.date(byAdding: .day, value: 1, to: midnight))
+        func record(_ kind: EventKind, _ date: Date?, amount: Double? = nil) throws {
+            try Inventory.record(kind, for: sample, amount: amount, notes: "Test", in: context)
+            sample.orderedEvents.last?.date = date
+        }
+        try record(.withdrawal, midnight.addingTimeInterval(-1), amount: 5)
+        try record(.withdrawal, midnight, amount: 10)
+        try record(.withdrawal, tomorrow.addingTimeInterval(-1), amount: 7)
+        try record(.withdrawal, tomorrow, amount: 2)
+        try record(.withdrawal, nil, amount: 1)
+        try record(.thawWithMeasurement, midnight.addingTimeInterval(-1))
+        try record(.thawCountDecrease, today)
+        try record(.thawWithMeasurement, today)
+        XCTAssertEqual(sample.takenOutUL(on: today, calendar: calendar), 18.5)
+        XCTAssertEqual(sample.takenOutUL(on: midnight.addingTimeInterval(-1), calendar: calendar), 5)
+        XCTAssertEqual(sample.takenOutUL(on: tomorrow, calendar: calendar), 2)
+        try record(.thawCountDecrease, tomorrow)
+        XCTAssertEqual(sample.takenOutUL(on: today, calendar: calendar), 17)
+        XCTAssertEqual(sample.takenOutUL(on: tomorrow, calendar: calendar), 2)
+        try record(.thawWithMeasurement, today)
+        try record(.volumeCorrection, today, amount: 40)
+        try record(.thawCountDecrease, today)
+        // No measurement refund after a measured balance correction.
+        XCTAssertEqual(sample.takenOutUL(on: today, calendar: calendar), 18.5)
+        XCTAssertEqual(sample.remainingUL, 40)
+    }
+
     func testProteinMassDisplayConvertsMilligramsAndKeepsUnknownSeparateFromZero() {
         XCTAssertEqual(proteinMassLabel(nil), "—")
         XCTAssertEqual(proteinMassLabel(0), "\(number(0)) µg")

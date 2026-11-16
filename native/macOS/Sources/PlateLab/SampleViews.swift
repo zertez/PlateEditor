@@ -85,13 +85,28 @@ struct SampleLibraryView: View {
                                 }
                             }.padding(.vertical, 9).frame(maxWidth: .infinity, alignment: .leading)
                         }.buttonStyle(.plain).help("View \(a.label) details and history")
-                    }.width(min: 130, ideal: 180, max: 270)
+                    }.width(min: 120, ideal: 155, max: 270)
                     TableColumn("Left (µL)") { a in
                         EditableSampleValue(sample: a, field: .volume)
-                    }.width(min: 85, ideal: 105, max: 130)
+                    }.width(min: 85, ideal: 95, max: 130)
+                    TableColumn("Taken out today (µL)") { a in
+                        TimelineView(.periodic(from: .now, by: 60)) { clock in
+                            Button { openWithdrawal(a) } label: {
+                                HStack(spacing: 8) {
+                                    Text(number(a.takenOutUL(on: clock.date))).monospacedDigit()
+                                    Image(systemName: "plus.circle").font(.callout)
+                                }.frame(maxWidth: .infinity, alignment: .leading).frame(height: 26)
+                                    .contentShape(Rectangle())
+                            }.buttonStyle(.plain).foregroundStyle(.tint)
+                                .disabled(a.archived || (a.remainingUL ?? 0) <= 0)
+                                .accessibilityLabel("Taken out today for \(a.label). Log a withdrawal")
+                                .accessibilityValue(volumeLabel(a.takenOutUL(on: clock.date)))
+                                .help("Recorded today, including 1.5 µL thaw measurements. Click to log another withdrawal. Enter only the additional amount removed.")
+                        }
+                    }.width(min: 145, ideal: 150, max: 185)
                     TableColumn("Conc. (\(concentrationUnit.rawValue))") { a in
                         EditableSampleValue(sample: a, field: .concentration)
-                    }.width(min: 105, ideal: 120, max: 150)
+                    }.width(min: 100, ideal: 110, max: 150)
                     TableColumn("Protein left") { a in
                         Text(proteinMassLabel(a.massUG, unit: massUnit)).monospacedDigit()
                             .accessibilityLabel("Protein left for \(a.label)")
@@ -99,10 +114,10 @@ struct SampleLibraryView: View {
                             .help(a.massUG == nil
                                   ? "Enter both remaining volume and concentration to calculate the protein amount."
                                   : "Calculated from remaining volume × concentration. Updates automatically when either value changes.")
-                    }.width(min: 110, ideal: 125, max: 150)
+                    }.width(min: 105, ideal: 115, max: 150)
                     TableColumn("Thaws") { a in
                         ThawCounter(aliquot: a)
-                    }.width(min: 130, ideal: 145, max: 180)
+                    }.width(min: 120, ideal: 130, max: 180)
                     TableColumn("Location") { a in
                         VStack(alignment: .leading, spacing: 4) {
                             Text(a.location.isEmpty ? "—" : a.location).lineLimit(1)
@@ -110,29 +125,27 @@ struct SampleLibraryView: View {
                                 Text(a.state.rawValue).font(.caption).foregroundStyle(.secondary)
                             }
                         }.help(a.location)
-                    }.width(min: 90, ideal: 150, max: 260)
+                    }.width(min: 75, ideal: 110, max: 260)
                     TableColumn("") { a in
-                        HStack(spacing: 12) {
-                            Button("Use…") { sheet = .event(a, .withdrawal) }
+                        Menu {
+                            Button("Log withdrawal…") { openWithdrawal(a) }
                                 .disabled(a.archived || (a.remainingUL ?? 0) <= 0)
-                            Menu {
-                                Button("Details & history…") { sheet = .details(a) }
-                                Divider()
-                                Button("Mark refrozen") { recordState(a) }
-                                    .disabled(a.archived || a.state == .frozen)
-                                Button("Change location…") { sheet = .event(a, .moved) }.disabled(a.archived)
-                                Button("Adjust volume…") { sheet = .event(a, .volumeCorrection) }.disabled(a.archived)
-                                Divider()
-                                Button(a.archived ? "Restore sample" : "Archive sample") { archive(a) }
-                            } label: { Image(systemName: "ellipsis") }
-                            .menuStyle(.borderlessButton).fixedSize().help("More actions for \(a.label)")
-                        }
-                    }.width(112)
+                            Button("Details & history…") { sheet = .details(a) }
+                            Divider()
+                            Button("Mark refrozen") { recordState(a) }
+                                .disabled(a.archived || a.state == .frozen)
+                            Button("Change location…") { sheet = .event(a, .moved) }.disabled(a.archived)
+                            Button("Adjust volume…") { sheet = .event(a, .volumeCorrection) }.disabled(a.archived)
+                            Divider()
+                            Button(a.archived ? "Restore sample" : "Archive sample") { archive(a) }
+                        } label: { Image(systemName: "ellipsis") }
+                        .menuStyle(.borderlessButton).fixedSize().help("More actions for \(a.label)")
+                    }.width(30)
                 }
                 .tableStyle(.inset(alternatesRowBackgrounds: false))
                 .contextMenu(forSelectionType: UUID.self) { ids in
                     if let id = ids.first, let a = matching.first(where: { $0.id == id }) {
-                        Button("Use sample…") { sheet = .event(a, .withdrawal) }
+                        Button("Log withdrawal…") { openWithdrawal(a) }
                             .disabled(a.archived || (a.remainingUL ?? 0) <= 0)
                         Button("Details & history…") { sheet = .details(a) }
                         Divider()
@@ -147,7 +160,7 @@ struct SampleLibraryView: View {
             }
             Divider()
             HStack {
-                Text("Double-click volume or concentration to edit. Each + uses 1.5 µL.")
+                Text("Click Taken out today to log use. Double-click volume or concentration to edit. Each thaw + uses 1.5 µL.")
                 Spacer()
                 Text("— Not recorded").foregroundStyle(.tertiary)
             }.font(.caption).foregroundStyle(.secondary).padding(.horizontal, 22).padding(.vertical, 11)
@@ -159,6 +172,11 @@ struct SampleLibraryView: View {
             case .event(let a, let kind): EventForm(aliquot: a, kind: kind)
             }
         }
+    }
+
+    private func openWithdrawal(_ sample: Aliquot) {
+        guard !sample.archived, (sample.remainingUL ?? 0) > 0 else { return }
+        app.valueEdit = SampleValueEdit(sample: sample, action: .withdrawal)
     }
 
     private func recordState(_ a: Aliquot) {
@@ -324,7 +342,7 @@ private struct HistoryRow: View {
         if event.kind == EventKind.thawCountDecrease.rawValue, event.volumeDeltaUL > 0 { return "Thaw corrected (−1) · restored \(volumeLabel(event.volumeDeltaUL))" }
         if event.kind == EventKind.thawCountIncrease.rawValue { return "Thawed (+1)" }
         if event.kind == EventKind.thawCountDecrease.rawValue { return "Thaw count corrected (−1)" }
-        if event.kind == EventKind.withdrawal.rawValue { return "Used \(volumeLabel(-event.volumeDeltaUL))" }
+        if event.kind == EventKind.withdrawal.rawValue { return "Taken out \(volumeLabel(-event.volumeDeltaUL))" }
         if let volume = event.volumeAfterUL { return "Volume set to \(volumeLabel(volume))" }
         return event.kind
     }
@@ -343,7 +361,7 @@ private struct HistoryRow: View {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title).fontWeight(.medium)
-                    if event.valueAfter != nil, !event.notes.isEmpty { Text(event.notes).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
+                    if event.valueAfter != nil || event.kind == EventKind.withdrawal.rawValue, !event.notes.isEmpty { Text(event.notes).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
                     if !event.experiment.isEmpty { Text(event.experiment).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
                 }
                 Spacer()
