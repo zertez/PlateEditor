@@ -34,9 +34,11 @@ Leave the volume blank when it is unknown. The app preserves that distinction fr
 
 ## Sample groups
 
-Use **New group** above the table to name a group and select its samples. The visible samples start selected; uncheck any that belong elsewhere. Choose a group in the **Group** selector to see only those tubes, or choose **All samples** or **Ungrouped**. **Edit group** changes the name or membership. A sample’s **… → Move to group** menu moves that tube directly. New samples default to the currently selected group. Empty groups disappear automatically.
+Samples appear under group headings directly in the table. Click a heading or its arrow to hide or show that group’s tubes independently; several groups can stay open at once. Ungrouped tubes appear together at the end. Searching reveals matching samples even if their group was collapsed, and the toolbar stays at the top when a search has no results.
 
-Groups organize tubes without merging protein records, volumes, concentrations, or histories. Each sample belongs to at most one group; selecting a sample already in another group moves it. Group names appear beside samples in the all-samples view and can be searched in Samples and Logs. Backups include group membership, and inventory CSV includes a Group column.
+Use **New enzyme or sample** below the groups to add a tube or register the first tube of a new enzyme group. Each group’s **…** menu offers **Add sample here** and **Edit group** (name and membership). A sample’s **… → Move to group** menu moves that tube directly. The library’s **… → New group from existing samples** action groups existing tubes. Empty groups disappear automatically.
+
+Groups organize tubes without merging protein records, volumes, concentrations, or histories. Each sample belongs to at most one group; selecting a sample already in another group moves it. Group names can be searched in Samples and Logs. Backups include group membership, and inventory CSV includes a Group column.
 
 ## Logs
 

@@ -31,21 +31,34 @@ struct AddSampleForm: View {
     @State private var more = false
     @State private var error: String?
     @FocusState private var focusName: Bool
+    @FocusState private var focusGroup: Bool
     @Query private var samples: [Aliquot]
     @State private var group: String?
+    @State private var creatingGroup: Bool
+    @State private var newGroupName = ""
 
-    init(initialGroup: String? = nil) {
+    init(initialGroup: String? = nil, createGroup: Bool = false) {
         _group = State(initialValue: initialGroup)
+        _creatingGroup = State(initialValue: createGroup)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             Text("Add sample").font(.title2.weight(.semibold))
             Text("One sample per tube. Leave unknown values blank.").foregroundStyle(.secondary)
-            if !SampleGroups.names(in: samples).isEmpty {
-                Picker("Group", selection: $group) {
-                    Text("Ungrouped").tag(nil as String?)
-                    ForEach(SampleGroups.names(in: samples), id: \.self) { Text($0).tag(Optional($0)) }
+            if creatingGroup {
+                HStack(alignment: .bottom) {
+                    SampleInput(title: "New enzyme / group name", text: $newGroupName, placeholder: "e.g. CSE")
+                        .focused($focusGroup)
+                    Button("Cancel new group") { creatingGroup = false }.padding(.bottom, 4)
+                }
+            } else {
+                HStack {
+                    Picker("Group", selection: $group) {
+                        Text("Ungrouped").tag(nil as String?)
+                        ForEach(SampleGroups.names(in: samples), id: \.self) { Text($0).tag(Optional($0)) }
+                    }
+                    Button("New group…") { creatingGroup = true; focusGroup = true }
                 }
             }
             HStack(spacing: 16) {
@@ -83,10 +96,10 @@ struct AddSampleForm: View {
                 Spacer()
                 Button("Cancel", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
                 Button("Add sample", action: save).buttonStyle(.borderedProminent)
-                    .keyboardShortcut(.defaultAction).disabled(clean(name).isEmpty)
+                    .keyboardShortcut(.defaultAction).disabled(clean(name).isEmpty || (creatingGroup && clean(newGroupName).isEmpty))
             }
         }.padding(24).frame(width: 560).fixedSize(horizontal: false, vertical: true)
-            .onAppear { focusName = true }
+            .onAppear { if creatingGroup { focusGroup = true } else { focusName = true } }
     }
 
     private func save() {
@@ -102,7 +115,11 @@ struct AddSampleForm: View {
             let batch = ProteinBatch(name: clean(name), variant: clean(form), concentration: c, buffer: clean(buffer))
             let sample = Aliquot(label: name, volume: v, concentration: c, thawCount: count,
                                 state: state, location: clean(location), notes: clean(notes))
-            sample.groupName = group
+            if creatingGroup {
+                let entered = clean(newGroupName)
+                guard !entered.isEmpty else { throw LabError("Give the new group a name.") }
+                sample.groupName = SampleGroups.names(in: samples).first { $0.caseInsensitiveCompare(entered) == .orderedSame } ?? entered
+            } else { sample.groupName = group }
             try Inventory.addSample(sample, with: batch, in: context)
             dismiss()
         } catch { self.error = error.localizedDescription }

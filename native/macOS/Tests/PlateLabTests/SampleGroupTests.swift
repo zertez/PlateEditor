@@ -3,6 +3,25 @@ import SwiftData
 @testable import PlateLab
 
 final class SampleGroupTests: XCTestCase {
+    @MainActor func testInlineSectionsKeepEachSampleOnceAndUngroupedSeparate() throws {
+        let source = try fixture()
+        defer { withExtendedLifetime(source) {} }
+        let tubes = source.2
+        tubes[0].groupName = "Enzyme B"
+        tubes[1].groupName = "Enzyme A"
+        let sections = SampleGroups.sections(in: tubes.reversed())
+        XCTAssertEqual(sections.map(\.name), ["Enzyme A", "Enzyme B", nil])
+        XCTAssertEqual(sections.flatMap(\.samples).map(\.id), [tubes[1].id, tubes[0].id, tubes[2].id])
+        XCTAssertEqual(Set(sections.map(\.id)).count, 3)
+        XCTAssertNotEqual(SampleGroupSection.identifier(for: "Ungrouped"), SampleGroupSection.identifier(for: nil))
+        XCTAssertTrue(SampleGroups.sections(in: []).isEmpty)
+        let filtered = SampleGroups.sections(in: [tubes[0]])
+        XCTAssertEqual(filtered.count, 1)
+        XCTAssertEqual(filtered.first?.id, sections[1].id)
+        XCTAssertEqual(tubes.map(\.remainingUL), [100, 100, 100])
+        XCTAssertTrue(tubes.allSatisfy { $0.events.isEmpty })
+    }
+
     @MainActor func testGroupingRenamingAndMovingKeepIndependentInventoryAndLogs() throws {
         let (app, batch, tubes) = try fixture()
         let context = app.container.mainContext

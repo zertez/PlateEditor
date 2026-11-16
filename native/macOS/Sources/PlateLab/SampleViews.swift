@@ -10,20 +10,20 @@ struct SampleLibraryView: View {
     @State private var showArchived = false
     @State private var sheet: SampleSheet?
     @State private var thawSample: Aliquot?
-    @State private var groupFilter: String?
+    @State private var collapsedGroups: Set<String> = []
     @AppStorage("proteinMassDisplayUnit") private var massUnit: ProteinMassUnit = .automatic
     @AppStorage("proteinConcentrationDisplayUnit") private var concentrationUnit: ProteinConcentrationUnit = .milligramsPerMilliliter
 
     private var matching: [Aliquot] {
         aliquots.filter {
             (showArchived || !$0.archived) &&
-            (groupFilter == nil || ($0.groupName ?? "") == groupFilter) &&
             (search.isEmpty || [$0.label, $0.batch?.title ?? "", $0.location, $0.groupName ?? ""]
                 .joined(separator: " ").localizedCaseInsensitiveContains(search))
         }.sorted { $0.label.localizedStandardCompare($1.label) == .orderedAscending }
     }
 
     private var groups: [String] { SampleGroups.names(in: aliquots) }
+    private var sections: [SampleGroupSection] { SampleGroups.sections(in: matching) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -39,10 +39,11 @@ struct SampleLibraryView: View {
                     .padding(.horizontal, 10).padding(.vertical, 7)
                     .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 7))
                     .frame(width: 200)
-                    Button { sheet = .add } label: { Label("Add sample", systemImage: "plus") }
+                    Button { sheet = .add(nil) } label: { Label("Add sample", systemImage: "plus") }
                         .buttonStyle(.borderedProminent)
                     Menu {
                         Toggle("Show archived samples", isOn: $showArchived)
+                        Button("New group from existing samples…") { sheet = .group(nil, []) }.disabled(aliquots.isEmpty)
                         Divider()
                         Button("Export samples…", action: app.exportCSV)
                         Button("Save backup…", action: app.exportSamples)
@@ -67,23 +68,6 @@ struct SampleLibraryView: View {
                     }
                     Spacer()
                 }
-                HStack(spacing: 12) {
-                    Label("Group", systemImage: "folder").font(.callout).foregroundStyle(.secondary)
-                    Picker("Sample group", selection: $groupFilter) {
-                        Text("All samples").tag(nil as String?)
-                        Text("Ungrouped").tag(Optional(""))
-                        ForEach(groups, id: \.self) { Text($0).tag(Optional($0)) }
-                    }.labelsHidden().frame(maxWidth: 430).help(groupFilter ?? "All samples")
-                    Button { sheet = .group(nil, Set(matching.map(\.id))) } label: {
-                        Label("New group", systemImage: "folder.badge.plus")
-                    }.disabled(aliquots.isEmpty)
-                    if let groupFilter, !groupFilter.isEmpty {
-                        Button("Edit group…") {
-                            sheet = .group(groupFilter, Set(aliquots.filter { $0.groupName == groupFilter }.map(\.id)))
-                        }
-                    }
-                    Spacer()
-                }
             }.padding(.horizontal, 22).padding(.vertical, 18)
             Divider()
             if aliquots.isEmpty {
@@ -92,21 +76,18 @@ struct SampleLibraryView: View {
                 } description: {
                     Text("Add a sample to track its volume and thaws.")
                 } actions: {
-                    Button("Add sample") { sheet = .add }.buttonStyle(.borderedProminent)
-                }
+                    Button("Add sample") { sheet = .add(nil) }.buttonStyle(.borderedProminent)
+                }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if matching.isEmpty {
-                ContentUnavailableView.search(text: search)
+                ContentUnavailableView.search(text: search).frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                Table(matching, selection: $selected) {
+                Table(of: Aliquot.self, selection: $selected) {
                     TableColumn("Sample") { a in
                         Button { sheet = .details(a) } label: {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(a.label).fontWeight(.semibold)
                                 if let form = a.batch?.variant, !form.isEmpty {
                                     Text(form).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                                }
-                                if groupFilter == nil, let group = a.groupName {
-                                    Label(group, systemImage: "folder").font(.caption).foregroundStyle(.secondary).lineLimit(1).help(group)
                                 }
                             }.padding(.vertical, 9).frame(maxWidth: .infinity, alignment: .leading)
                         }.buttonStyle(.plain).help("View \(a.label) details and history")
@@ -167,6 +148,25 @@ struct SampleLibraryView: View {
                         } label: { Image(systemName: "ellipsis") }
                         .menuStyle(.borderlessButton).fixedSize().help("More actions for \(a.label)")
                     }.width(30)
+                } rows: {
+                    ForEach(sections) { section in
+                        Section {
+                            if !collapsedGroups.contains(section.id) {
+                                ForEach(section.samples) { TableRow($0) }
+                            }
+                        } header: {
+                            groupHeading(section)
+                        }
+                    }
+                    Section { ForEach([Aliquot]()) { TableRow($0) } } header: {
+                        Menu {
+                            Button("Add sample…") { sheet = .add(nil) }
+                            Button("New enzyme group…") { sheet = .newEnzyme }
+                        } label: {
+                            Label("New enzyme or sample", systemImage: "plus.circle")
+                                .font(.callout.weight(.medium)).padding(.vertical, 10)
+                        }.menuStyle(.borderlessButton).fixedSize().foregroundStyle(.tint)
+                    }
                 }
                 .tableStyle(.inset(alternatesRowBackgrounds: false))
                 .contextMenu(forSelectionType: UUID.self) { ids in
@@ -191,19 +191,55 @@ struct SampleLibraryView: View {
                 Spacer()
                 Text("— Not recorded").foregroundStyle(.tertiary)
             }.font(.caption).foregroundStyle(.secondary).padding(.horizontal, 22).padding(.vertical, 11)
-        }
+        }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .sheet(item: $sheet) { destination in
             switch destination {
-            case .add: AddSampleForm(initialGroup: groupFilter.flatMap { $0.isEmpty ? nil : $0 })
+            case .add(let group): AddSampleForm(initialGroup: group)
+            case .newEnzyme: AddSampleForm(createGroup: true)
             case .details(let a): SampleDetailsView(aliquot: a)
             case .event(let a, let kind): EventForm(aliquot: a, kind: kind)
             case .group(let name, let members):
-                SampleGroupForm(name: name, members: members) { groupFilter = $0 }
+                SampleGroupForm(name: name, members: members) { saved in
+                    collapsedGroups.remove(SampleGroupSection.identifier(for: saved))
+                }
             }
         }
         .modifier(ThawConfirmation(sample: $thawSample))
-        .onChange(of: groups) { _, names in
-            if let groupFilter, !groupFilter.isEmpty, !names.contains(groupFilter) { self.groupFilter = nil }
+        .onChange(of: search) { _, query in
+            if !clean(query).isEmpty { collapsedGroups.subtract(sections.map(\.id)) }
+        }
+    }
+
+
+    private func groupHeading(_ section: SampleGroupSection) -> some View {
+        HStack(spacing: 12) {
+            Button {
+                if collapsedGroups.contains(section.id) { collapsedGroups.remove(section.id) }
+                else { collapsedGroups.insert(section.id) }
+            } label: {
+                HStack(spacing: 9) {
+                    Image(systemName: collapsedGroups.contains(section.id) ? "chevron.right" : "chevron.down")
+                        .font(.caption.weight(.semibold)).frame(width: 12)
+                    Text(section.name ?? "Ungrouped").font(.headline)
+                    Text("\(section.samples.count)").font(.callout).foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                }.contentShape(Rectangle()).padding(.vertical, 10)
+            }.buttonStyle(.plain)
+                .accessibilityLabel("\(collapsedGroups.contains(section.id) ? "Expand" : "Collapse") \(section.name ?? "Ungrouped")")
+                .accessibilityValue("\(section.samples.count) \(section.samples.count == 1 ? "sample" : "samples")")
+                .help("Click to show or hide these samples")
+            Menu {
+                Button("Add sample here…") { sheet = .add(section.name) }
+                if let name = section.name {
+                    Button("Edit group…") {
+                        sheet = .group(name, Set(aliquots.filter { $0.groupName == name }.map(\.id)))
+                    }
+                } else {
+                    Button("Group these samples…") { sheet = .group(nil, Set(section.samples.map(\.id))) }
+                }
+            } label: { Image(systemName: "ellipsis") }
+                .menuStyle(.borderlessButton).fixedSize()
+                .accessibilityLabel("Actions for \(section.name ?? "Ungrouped")")
         }
     }
 
@@ -243,10 +279,11 @@ struct SampleLibraryView: View {
 }
 
 private enum SampleSheet: Identifiable {
-    case add, details(Aliquot), event(Aliquot, EventKind), group(String?, Set<UUID>)
+    case add(String?), newEnzyme, details(Aliquot), event(Aliquot, EventKind), group(String?, Set<UUID>)
     var id: String {
         switch self {
-        case .add: "add"
+        case .add(let name): "add-\(name ?? "ungrouped")"
+        case .newEnzyme: "new-enzyme"
         case .details(let a): "details-\(a.id)"
         case .event(let a, let kind): "\(a.id)-\(kind.rawValue)"
         case .group(let name, _): "group-\(name ?? "new")"

@@ -1,9 +1,26 @@
 import Foundation
 import SwiftData
 
+struct SampleGroupSection: Identifiable {
+    let name: String?
+    let samples: [Aliquot]
+    var id: String { Self.identifier(for: name) }
+    static func identifier(for name: String?) -> String { name.map { "group:\($0)" } ?? "ungrouped" }
+}
+
 enum SampleGroups {
     static func names(in samples: [Aliquot]) -> [String] {
         Array(Set(samples.compactMap(\.groupName))).sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    }
+
+    static func sections(in samples: [Aliquot]) -> [SampleGroupSection] {
+        let grouped = Dictionary(grouping: samples, by: \.groupName)
+        let names: [String?] = names(in: samples).map(Optional.some) + (grouped[nil] == nil ? [] : [nil])
+        return names.map { name in
+            SampleGroupSection(name: name, samples: (grouped[name] ?? []).sorted {
+                $0.label.localizedStandardCompare($1.label) == .orderedAscending
+            })
+        }
     }
 
     @MainActor static func save(name: String, replacing original: String? = nil, members: Set<UUID>, in context: ModelContext) throws -> String {
