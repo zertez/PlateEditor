@@ -10,6 +10,7 @@ struct EventRecord: Codable, Equatable {
 struct AliquotRecord: Codable, Equatable {
     var id: UUID; var label: String; var volume: Double?; var concentration: Double?; var thaws: Int?
     var state: StorageState; var location: String; var notes: String; var archived: Bool; var created: Date; var events: [EventRecord]
+    var groupName: String? = nil
 }
 struct BatchRecord: Codable, Equatable {
     var id: UUID; var name: String; var variant: String; var batchLabel: String; var prepared: Date?
@@ -17,20 +18,20 @@ struct BatchRecord: Codable, Equatable {
 }
 struct SampleBackup: Codable {
     var format = "platelab-samples"
-    var version = 5
+    var version = 6
     var batches: [BatchRecord]
     @MainActor init(batches: [ProteinBatch]) {
         self.batches=batches.map { b in
             BatchRecord(id:b.id,name:b.name,variant:b.variant,batchLabel:b.batchLabel,prepared:b.preparedOn,concentration:b.concentrationMgML,buffer:b.buffer,notes:b.notes,created:b.createdAt,aliquots:b.aliquots.sorted { $0.id.uuidString < $1.id.uuidString }.map { a in
                 AliquotRecord(id:a.id,label:a.label,volume:a.startingVolumeUL,concentration:a.concentrationMgML,thaws:a.startingThawCount,state:StorageState(rawValue:a.initialState) ?? .unknown,location:a.initialLocation,notes:a.notes,archived:a.archived,created:a.createdAt,events:a.orderedEvents.map { e in
                     EventRecord(id:e.id,sequence:e.sequence,date:e.date,kind:EventKind(rawValue:e.kind)!,delta:e.volumeDeltaUL,dateOnly:e.dateOnly ? true:nil,volumeAfter:e.volumeAfterUL,valueBefore:e.valueBefore,valueAfter:e.valueAfter,state:e.newState.flatMap(StorageState.init(rawValue:)),location:e.newLocation,notes:e.notes,experiment:e.experiment,plateID:e.plateID,wells:e.wells)
-                })
+                }, groupName: a.groupName)
             })
         }.sorted { $0.id.uuidString < $1.id.uuidString }
     }
     func data() throws -> Data { let encoder=JSONEncoder();encoder.outputFormatting=[.prettyPrinted,.sortedKeys];return try encoder.encode(self) }
     func validate() throws {
-        guard format=="platelab-samples",[1,2,3,4,5].contains(version) else { throw LabError("This is not a supported PlateLab sample backup.") }
+        guard format=="platelab-samples",[1,2,3,4,5,6].contains(version) else { throw LabError("This is not a supported PlateLab sample backup.") }
         var ids=Set<UUID>();var labels=Set<String>()
         func unique(_ id: UUID) throws { guard ids.insert(id).inserted else { throw LabError("The backup contains duplicate record IDs.") } }
         func concentration(_ value: Double?) throws { if let value, !value.isFinite || value < 0 { throw LabError("The backup contains an invalid concentration.") } }
@@ -41,6 +42,7 @@ struct SampleBackup: Codable {
                 try unique(a.id);try concentration(a.concentration)
                 guard !clean(a.label).isEmpty, labels.insert(clean(a.label).lowercased()).inserted,a.thaws == nil || a.thaws!>=0 else { throw LabError("An aliquot has an invalid ID or thaw count.") }
                 if let volume=a.volume, !volume.isFinite || volume<0 { throw LabError("An aliquot has an invalid volume.") }
+                if let group=a.groupName, version<6 || clean(group).isEmpty || group != clean(group) { throw LabError("A sample has an invalid group name.") }
                 var remaining=a.volume;var state=a.state;var sequence=0;var thaws=a.thaws ?? 0
                 var currentConcentration=a.concentration
                 var measurements: [Double] = []
@@ -118,7 +120,7 @@ struct SampleBackup: Codable {
             let batch=ProteinBatch(id:b.id,name:b.name,variant:b.variant,batchLabel:b.batchLabel,preparedOn:b.prepared,concentration:b.concentration,buffer:b.buffer,notes:b.notes,createdAt:b.created);context.insert(batch)
             for a in b.aliquots {
                 let aliquot=Aliquot(id:a.id,label:a.label,volume:a.volume,concentration:a.concentration,thawCount:a.thaws,state:a.state,location:a.location,notes:a.notes,createdAt:a.created)
-                aliquot.archived=a.archived;context.insert(aliquot);aliquot.batch=batch
+                aliquot.archived=a.archived;aliquot.groupName=a.groupName;context.insert(aliquot);aliquot.batch=batch
                 for e in a.events {
                     let event=SampleEvent(id:e.id,sequence:e.sequence,date:e.date,dateOnly:e.dateOnly ?? false,kind:e.kind,delta:e.delta,volumeAfter:e.volumeAfter,state:e.state,location:e.location,notes:e.notes,experiment:e.experiment,plateID:e.plateID,wells:e.wells,valueBefore:e.valueBefore,valueAfter:e.valueAfter)
                     context.insert(event);event.aliquot=aliquot

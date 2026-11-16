@@ -10,16 +10,20 @@ struct SampleLibraryView: View {
     @State private var showArchived = false
     @State private var sheet: SampleSheet?
     @State private var thawSample: Aliquot?
+    @State private var groupFilter: String?
     @AppStorage("proteinMassDisplayUnit") private var massUnit: ProteinMassUnit = .automatic
     @AppStorage("proteinConcentrationDisplayUnit") private var concentrationUnit: ProteinConcentrationUnit = .milligramsPerMilliliter
 
     private var matching: [Aliquot] {
         aliquots.filter {
             (showArchived || !$0.archived) &&
-            (search.isEmpty || [$0.label, $0.batch?.title ?? "", $0.location]
+            (groupFilter == nil || ($0.groupName ?? "") == groupFilter) &&
+            (search.isEmpty || [$0.label, $0.batch?.title ?? "", $0.location, $0.groupName ?? ""]
                 .joined(separator: " ").localizedCaseInsensitiveContains(search))
         }.sorted { $0.label.localizedStandardCompare($1.label) == .orderedAscending }
     }
+
+    private var groups: [String] { SampleGroups.names(in: aliquots) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -63,6 +67,23 @@ struct SampleLibraryView: View {
                     }
                     Spacer()
                 }
+                HStack(spacing: 12) {
+                    Label("Group", systemImage: "folder").font(.callout).foregroundStyle(.secondary)
+                    Picker("Sample group", selection: $groupFilter) {
+                        Text("All samples").tag(nil as String?)
+                        Text("Ungrouped").tag(Optional(""))
+                        ForEach(groups, id: \.self) { Text($0).tag(Optional($0)) }
+                    }.labelsHidden().frame(maxWidth: 430).help(groupFilter ?? "All samples")
+                    Button { sheet = .group(nil, Set(matching.map(\.id))) } label: {
+                        Label("New group", systemImage: "folder.badge.plus")
+                    }.disabled(aliquots.isEmpty)
+                    if let groupFilter, !groupFilter.isEmpty {
+                        Button("Edit group…") {
+                            sheet = .group(groupFilter, Set(aliquots.filter { $0.groupName == groupFilter }.map(\.id)))
+                        }
+                    }
+                    Spacer()
+                }
             }.padding(.horizontal, 22).padding(.vertical, 18)
             Divider()
             if aliquots.isEmpty {
@@ -83,6 +104,9 @@ struct SampleLibraryView: View {
                                 Text(a.label).fontWeight(.semibold)
                                 if let form = a.batch?.variant, !form.isEmpty {
                                     Text(form).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                }
+                                if groupFilter == nil, let group = a.groupName {
+                                    Label(group, systemImage: "folder").font(.caption).foregroundStyle(.secondary).lineLimit(1).help(group)
                                 }
                             }.padding(.vertical, 9).frame(maxWidth: .infinity, alignment: .leading)
                         }.buttonStyle(.plain).help("View \(a.label) details and history")
@@ -132,6 +156,7 @@ struct SampleLibraryView: View {
                             Button("Log withdrawal…") { openWithdrawal(a) }
                                 .disabled(a.archived || (a.remainingUL ?? 0) <= 0)
                             Button("Details & history…") { sheet = .details(a) }
+                            groupMenu(a)
                             Divider()
                             Button("Mark refrozen") { recordState(a) }
                                 .disabled(a.archived || a.state == .frozen)
@@ -149,6 +174,7 @@ struct SampleLibraryView: View {
                         Button("Log withdrawal…") { openWithdrawal(a) }
                             .disabled(a.archived || (a.remainingUL ?? 0) <= 0)
                         Button("Details & history…") { sheet = .details(a) }
+                        groupMenu(a)
                         Divider()
                         Button("Add thaw…") { thawSample = a }.disabled(a.archived || a.countedThaws == Int.max)
                         Button("Correct thaw count (−1)") { changeCount(a, kind: .thawCountDecrease) }.disabled(a.archived || a.countedThaws == 0)
@@ -168,12 +194,33 @@ struct SampleLibraryView: View {
         }
         .sheet(item: $sheet) { destination in
             switch destination {
-            case .add: AddSampleForm()
+            case .add: AddSampleForm(initialGroup: groupFilter.flatMap { $0.isEmpty ? nil : $0 })
             case .details(let a): SampleDetailsView(aliquot: a)
             case .event(let a, let kind): EventForm(aliquot: a, kind: kind)
+            case .group(let name, let members):
+                SampleGroupForm(name: name, members: members) { groupFilter = $0 }
             }
         }
         .modifier(ThawConfirmation(sample: $thawSample))
+        .onChange(of: groups) { _, names in
+            if let groupFilter, !groupFilter.isEmpty, !names.contains(groupFilter) { self.groupFilter = nil }
+        }
+    }
+
+    private func groupMenu(_ sample: Aliquot) -> some View {
+        Menu("Move to group") {
+            Button("Ungrouped") { move(sample, to: nil) }.disabled(sample.groupName == nil)
+            ForEach(groups, id: \.self) { group in
+                Button(group) { move(sample, to: group) }.disabled(sample.groupName == group)
+            }
+            Divider()
+            Button("New group…") { sheet = .group(nil, [sample.id]) }
+        }
+    }
+
+    private func move(_ sample: Aliquot, to name: String?) {
+        do { try SampleGroups.move(sample, to: name, in: context) }
+        catch { app.error = error.localizedDescription }
     }
 
     private func openWithdrawal(_ sample: Aliquot) {
@@ -196,12 +243,13 @@ struct SampleLibraryView: View {
 }
 
 private enum SampleSheet: Identifiable {
-    case add, details(Aliquot), event(Aliquot, EventKind)
+    case add, details(Aliquot), event(Aliquot, EventKind), group(String?, Set<UUID>)
     var id: String {
         switch self {
         case .add: "add"
         case .details(let a): "details-\(a.id)"
         case .event(let a, let kind): "\(a.id)-\(kind.rawValue)"
+        case .group(let name, _): "group-\(name ?? "new")"
         }
     }
 }
@@ -335,6 +383,7 @@ struct SampleDetailsView: View {
                     DisclosureGroup("More details", isExpanded: $showExtra) {
                         VStack(alignment: .leading, spacing: 12) {
                             LabeledContent("State", value: aliquot.state.rawValue)
+                            LabeledContent("Group", value: aliquot.groupName ?? "Ungrouped")
                             LabeledContent("Location", value: aliquot.location.isEmpty ? "Not recorded" : aliquot.location)
                             if let mass = aliquot.massUG { LabeledContent("Protein remaining", value: proteinMassLabel(mass, unit: massUnit)) }
                             if let buffer = aliquot.batch?.buffer, !buffer.isEmpty { LabeledContent("Buffer", value: buffer) }

@@ -31,11 +31,23 @@ struct AddSampleForm: View {
     @State private var more = false
     @State private var error: String?
     @FocusState private var focusName: Bool
+    @Query private var samples: [Aliquot]
+    @State private var group: String?
+
+    init(initialGroup: String? = nil) {
+        _group = State(initialValue: initialGroup)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             Text("Add sample").font(.title2.weight(.semibold))
             Text("One sample per tube. Leave unknown values blank.").foregroundStyle(.secondary)
+            if !SampleGroups.names(in: samples).isEmpty {
+                Picker("Group", selection: $group) {
+                    Text("Ungrouped").tag(nil as String?)
+                    ForEach(SampleGroups.names(in: samples), id: \.self) { Text($0).tag(Optional($0)) }
+                }
+            }
             HStack(spacing: 16) {
                 SampleInput(title: "Sample name", text: $name, placeholder: "e.g. α").focused($focusName)
                 SampleInput(title: "Form", text: $form, placeholder: "e.g. Cut · no His-tag")
@@ -90,6 +102,7 @@ struct AddSampleForm: View {
             let batch = ProteinBatch(name: clean(name), variant: clean(form), concentration: c, buffer: clean(buffer))
             let sample = Aliquot(label: name, volume: v, concentration: c, thawCount: count,
                                 state: state, location: clean(location), notes: clean(notes))
+            sample.groupName = group
             try Inventory.addSample(sample, with: batch, in: context)
             dismiss()
         } catch { self.error = error.localizedDescription }

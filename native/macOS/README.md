@@ -30,7 +30,13 @@ Each tube has independent volume and thaw history. Refreezing does not add a tha
 
 Starting counts and historical counter entries do not deduct volume retrospectively and do not restore unrecorded measurement volumes when corrected. Registration counters only set the opening count. If a remaining volume has been manually corrected since a thaw, correcting that earlier thaw does not add volume to the newer measured balance.
 
-Leave the volume blank when it is unknown. The app preserves that distinction from zero. A thaw measurement still logs the known 1.5 µL use, while the remaining balance stays unknown. Other withdrawals require a known balance. Double-click the volume cell (or use **Adjust volume**) to establish the first measured balance. Imported history can retain undated events or dates without an invented time. Sample backup version 5 includes value-change history; versions 1–4 remain readable. CSV exports include current concentration, thaw count, and remaining volume.
+Leave the volume blank when it is unknown. The app preserves that distinction from zero. A thaw measurement still logs the known 1.5 µL use, while the remaining balance stays unknown. Other withdrawals require a known balance. Double-click the volume cell (or use **Adjust volume**) to establish the first measured balance. Imported history can retain undated events or dates without an invented time. Sample backup version 6 includes group membership and value-change history; versions 1–5 remain readable. CSV exports include current concentration, thaw count, and remaining volume.
+
+## Sample groups
+
+Use **New group** above the table to name a group and select its samples. The visible samples start selected; uncheck any that belong elsewhere. Choose a group in the **Group** selector to see only those tubes, or choose **All samples** or **Ungrouped**. **Edit group** changes the name or membership. A sample’s **… → Move to group** menu moves that tube directly. New samples default to the currently selected group. Empty groups disappear automatically.
+
+Groups organize tubes without merging protein records, volumes, concentrations, or histories. Each sample belongs to at most one group; selecting a sample already in another group moves it. Group names appear beside samples in the all-samples view and can be searched in Samples and Logs. Backups include group membership, and inventory CSV includes a Group column.
 
 ## Logs
 

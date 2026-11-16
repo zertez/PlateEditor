@@ -86,6 +86,7 @@ func quantity(_ text: String, name: String, optional: Bool = false) throws -> Do
     var initialLocation: String
     var notes: String
     var archived: Bool
+    var groupName: String? = nil
     var createdAt: Date
     var batch: ProteinBatch?
     @Relationship(deleteRule: .cascade, inverse: \SampleEvent.aliquot) var events: [SampleEvent] = []

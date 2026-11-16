@@ -34,7 +34,7 @@ enum SampleLog {
         return events.filter { event in
             guard sampleID == nil || event.aliquot?.id == sampleID else { return false }
             guard !query.isEmpty else { return true }
-            let searchable = [event.aliquot?.label ?? "", event.aliquot?.batch?.title ?? "",
+            let searchable = [event.aliquot?.label ?? "", event.aliquot?.groupName ?? "", event.aliquot?.batch?.title ?? "",
                               event.kind, event.activityTitle(concentrationUnit: concentrationUnit),
                               event.notes, event.experiment, event.wells, event.newLocation ?? "", event.logDateLabel]
             return searchable.contains { $0.localizedStandardContains(query) }
