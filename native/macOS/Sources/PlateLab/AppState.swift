@@ -13,7 +13,17 @@ import UniformTypeIdentifiers
     @Published var currentPlateID: String?
     @Published var currentPlateTitle = ""
     @Published var currentWells: [String] = []
-    enum Section: String, CaseIterable, Identifiable { case samples = "Samples", plates = "Plates";var id: String { rawValue } }
+    enum Section: String, CaseIterable, Identifiable {
+        case samples = "Samples", logs = "Logs", plates = "Plates"
+        var id: String { rawValue }
+        var symbol: String {
+            switch self {
+            case .samples: "shippingbox"
+            case .logs: "clock.arrow.circlepath"
+            case .plates: "square.grid.3x3"
+            }
+        }
+    }
     init(directory: URL? = nil, memory: Bool = false) throws {
         let base=try directory ?? FileManager.default.url(for:.applicationSupportDirectory,in:.userDomainMask,appropriateFor:nil,create:true).appendingPathComponent("PlateLab",isDirectory:true)
         dataDirectory=base

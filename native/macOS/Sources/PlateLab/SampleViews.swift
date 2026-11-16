@@ -360,20 +360,6 @@ private struct HistoryRow: View {
     @AppStorage("proteinConcentrationDisplayUnit") private var concentrationUnit: ProteinConcentrationUnit = .milligramsPerMilliliter
     let event: SampleEvent
     @State private var expanded = false
-    private var title: String {
-        if let after = event.valueAfter {
-            let unit = event.kind == EventKind.concentrationCorrection.rawValue ? concentrationUnit.rawValue : "µL"
-            let name = event.kind == EventKind.concentrationCorrection.rawValue ? "Concentration" : "Volume"
-            return "\(name): \(event.valueBefore.map(number) ?? "Unknown") → \(number(after)) \(unit)"
-        }
-        if event.kind == EventKind.thawWithMeasurement.rawValue { return "Thawed (+1) · measured with \(volumeLabel(-event.volumeDeltaUL))" }
-        if event.kind == EventKind.thawCountDecrease.rawValue, event.volumeDeltaUL > 0 { return "Thaw corrected (−1) · restored \(volumeLabel(event.volumeDeltaUL))" }
-        if event.kind == EventKind.thawCountIncrease.rawValue { return "Thawed (+1)" }
-        if event.kind == EventKind.thawCountDecrease.rawValue { return "Thaw count corrected (−1)" }
-        if event.kind == EventKind.withdrawal.rawValue { return "Taken out \(volumeLabel(-event.volumeDeltaUL))" }
-        if let volume = event.volumeAfterUL { return "Volume set to \(volumeLabel(volume))" }
-        return event.kind
-    }
     var body: some View {
         DisclosureGroup(isExpanded: $expanded) {
             VStack(alignment: .leading, spacing: 7) {
@@ -388,12 +374,12 @@ private struct HistoryRow: View {
         } label: {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(title).fontWeight(.medium)
+                    Text(event.activityTitle(concentrationUnit: concentrationUnit)).fontWeight(.medium)
                     if event.valueAfter != nil || [EventKind.withdrawal.rawValue, EventKind.thawCountIncrease.rawValue].contains(event.kind), !event.notes.isEmpty { Text(event.notes).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
                     if !event.experiment.isEmpty { Text(event.experiment).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
                 }
                 Spacer()
-                Text(event.date.map { $0.formatted(date: .abbreviated, time: event.dateOnly ? .omitted : .shortened) } ?? "Undated")
+                Text(event.logDateLabel)
                     .font(.caption).foregroundStyle(.secondary)
             }
         }.padding(.vertical, 11)

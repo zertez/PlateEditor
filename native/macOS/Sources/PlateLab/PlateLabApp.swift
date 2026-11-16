@@ -51,7 +51,7 @@ struct RootView: View {
             VStack(alignment:.leading,spacing:0) {
                 Label("PlateLab",systemImage:"flask.fill").font(.title2.weight(.semibold)).padding(20)
                 List(AppState.Section.allCases,selection:$app.section) { section in
-                    Label(section.rawValue,systemImage:section == .samples ? "shippingbox":"square.grid.3x3").tag(section)
+                    Label(section.rawValue,systemImage:section.symbol).tag(section)
                 }.listStyle(.sidebar)
                 VStack(alignment:.leading,spacing:7) {
                     Text("\(aliquots.filter { !$0.archived }.count) samples").font(.subheadline)
@@ -67,6 +67,7 @@ struct RootView: View {
         } detail: {
             ZStack {
                 SampleLibraryView().opacity(app.section == .samples ? 1:0).allowsHitTesting(app.section == .samples).accessibilityHidden(app.section != .samples)
+                SampleLogsView().opacity(app.section == .logs ? 1:0).allowsHitTesting(app.section == .logs).accessibilityHidden(app.section != .logs)
                 PlateWorkspaceView().opacity(app.section == .plates ? 1:0).allowsHitTesting(app.section == .plates).accessibilityHidden(app.section != .plates)
             }
         }

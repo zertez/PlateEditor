@@ -32,6 +32,10 @@ Starting counts and historical counter entries do not deduct volume retrospectiv
 
 Leave the volume blank when it is unknown. The app preserves that distinction from zero. A thaw measurement still logs the known 1.5 µL use, while the remaining balance stays unknown. Other withdrawals require a known balance. Double-click the volume cell (or use **Adjust volume**) to establish the first measured balance. Imported history can retain undated events or dates without an invented time. Sample backup version 5 includes value-change history; versions 1–4 remain readable. CSV exports include current concentration, thaw count, and remaining volume.
 
+## Logs
+
+Choose **Logs**, directly below **Samples** in the sidebar, to see activity across all samples, newest first. Each entry shows the date and time, sample, change, and reason, with experiment, location, and well details when recorded. Search the log or filter to a single sample; click a sample name for its full history. Archived samples retain their logs. Imported dates without a time are marked **Time not recorded**, and undated records appear at the end. The log reads the existing history and updates automatically when an event is saved.
+
 ## Plates and sample usage
 
 The Plates tab retains the compact plate overview, compact hover details, recipes, volumes, layout import, and detailed print/export settings. Import an existing `.save` or `.plate.json` once; subsequent edits save automatically on this Mac. The Mac library is separate from your browser library. Browser-only recipes need a `.plate.json` backup to transfer them completely.
