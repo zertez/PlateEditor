@@ -47,7 +47,7 @@ final class InventoryTests: XCTestCase {
         XCTAssertEqual(sample.takenOutUL(on: Date()), 100)
     }
 
-    @MainActor func testDailyUseFollowsLocalDaysAndRefundsOriginalMeasurementDay() throws {
+    @MainActor func testDailyUseFollowsLocalDaysAndExcludesMeasurementsAndCorrections() throws {
         let (app, _, sample) = try fixture()
         let context = app.container.mainContext
         var calendar = Calendar(identifier: .gregorian)
@@ -67,7 +67,7 @@ final class InventoryTests: XCTestCase {
         try record(.thawWithMeasurement, midnight.addingTimeInterval(-1))
         try record(.thawCountDecrease, today)
         try record(.thawWithMeasurement, today)
-        XCTAssertEqual(sample.takenOutUL(on: today, calendar: calendar), 18.5)
+        XCTAssertEqual(sample.takenOutUL(on: today, calendar: calendar), 17)
         XCTAssertEqual(sample.takenOutUL(on: midnight.addingTimeInterval(-1), calendar: calendar), 5)
         XCTAssertEqual(sample.takenOutUL(on: tomorrow, calendar: calendar), 2)
         try record(.thawCountDecrease, tomorrow)
@@ -76,9 +76,33 @@ final class InventoryTests: XCTestCase {
         try record(.thawWithMeasurement, today)
         try record(.volumeCorrection, today, amount: 40)
         try record(.thawCountDecrease, today)
-        // No measurement refund after a measured balance correction.
-        XCTAssertEqual(sample.takenOutUL(on: today, calendar: calendar), 18.5)
+        // Neither measurements nor measured balance corrections change assay use.
+        XCTAssertEqual(sample.takenOutUL(on: today, calendar: calendar), 17)
         XCTAssertEqual(sample.remainingUL, 40)
+    }
+
+    @MainActor func testAssayUseStaysSeparateFromOptionalThawMeasurements() throws {
+        let (app, batch, sample) = try fixture()
+        let context = app.container.mainContext
+        try Inventory.record(.thawWithMeasurement, for: sample, in: context)
+        XCTAssertEqual(sample.countedThaws, 1)
+        XCTAssertEqual(sample.remainingUL, 98.5)
+        XCTAssertEqual(sample.takenOutUL(on: Date()), 0)
+        try Inventory.withdraw(3.5, from: sample, expectedVolume: 98.5, reason: "Enzymatic assay", in: context)
+        XCTAssertEqual(sample.remainingUL, 95)
+        XCTAssertEqual(sample.takenOutUL(on: Date()), 3.5)
+        try Inventory.record(.thawCountIncrease, for: sample, notes: "No concentration measurement.", in: context)
+        XCTAssertEqual(sample.countedThaws, 2)
+        XCTAssertEqual(sample.remainingUL, 95)
+        XCTAssertEqual(sample.nextThawCorrectionVolumeUL, 0)
+        try Inventory.record(.thawCountDecrease, for: sample, in: context)
+        XCTAssertEqual(sample.remainingUL, 95)
+        XCTAssertEqual(sample.nextThawCorrectionVolumeUL, 1.5)
+        try Inventory.record(.thawCountDecrease, for: sample, in: context)
+        XCTAssertEqual(sample.remainingUL, 96.5)
+        XCTAssertEqual(sample.countedThaws, 0)
+        XCTAssertEqual(sample.takenOutUL(on: Date()), 3.5)
+        try SampleBackup(batches: [batch]).validate()
     }
 
     func testProteinMassDisplayConvertsMilligramsAndKeepsUnknownSeparateFromZero() {

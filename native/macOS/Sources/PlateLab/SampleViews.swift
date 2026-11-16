@@ -9,6 +9,7 @@ struct SampleLibraryView: View {
     @State private var search = ""
     @State private var showArchived = false
     @State private var sheet: SampleSheet?
+    @State private var thawSample: Aliquot?
     @AppStorage("proteinMassDisplayUnit") private var massUnit: ProteinMassUnit = .automatic
     @AppStorage("proteinConcentrationDisplayUnit") private var concentrationUnit: ProteinConcentrationUnit = .milligramsPerMilliliter
 
@@ -101,7 +102,7 @@ struct SampleLibraryView: View {
                                 .disabled(a.archived || (a.remainingUL ?? 0) <= 0)
                                 .accessibilityLabel("Taken out today for \(a.label). Log a withdrawal")
                                 .accessibilityValue(volumeLabel(a.takenOutUL(on: clock.date)))
-                                .help("Recorded today, including 1.5 µL thaw measurements. Click to log another withdrawal. Enter only the additional amount removed.")
+                                .help("Withdrawals logged today, such as assays. Excludes concentration measurements. Click to enter the amount removed in another withdrawal.")
                         }
                     }.width(min: 145, ideal: 150, max: 185)
                     TableColumn("Conc. (\(concentrationUnit.rawValue))") { a in
@@ -149,7 +150,7 @@ struct SampleLibraryView: View {
                             .disabled(a.archived || (a.remainingUL ?? 0) <= 0)
                         Button("Details & history…") { sheet = .details(a) }
                         Divider()
-                        Button("Thaw + measure (−1.5 µL)") { changeCount(a, kind: .thawWithMeasurement) }.disabled(a.archived || a.countedThaws == Int.max)
+                        Button("Add thaw…") { thawSample = a }.disabled(a.archived || a.countedThaws == Int.max)
                         Button("Correct thaw count (−1)") { changeCount(a, kind: .thawCountDecrease) }.disabled(a.archived || a.countedThaws == 0)
                         Button("Mark refrozen") { recordState(a) }
                             .disabled(a.archived || a.state == .frozen)
@@ -160,7 +161,7 @@ struct SampleLibraryView: View {
             }
             Divider()
             HStack {
-                Text("Click Taken out today to log use. Double-click volume or concentration to edit. Each thaw + uses 1.5 µL.")
+                Text("Taken out today excludes concentration measurements. Thaw + asks whether you used 1.5 µL.")
                 Spacer()
                 Text("— Not recorded").foregroundStyle(.tertiary)
             }.font(.caption).foregroundStyle(.secondary).padding(.horizontal, 22).padding(.vertical, 11)
@@ -172,6 +173,7 @@ struct SampleLibraryView: View {
             case .event(let a, let kind): EventForm(aliquot: a, kind: kind)
             }
         }
+        .modifier(ThawConfirmation(sample: $thawSample))
     }
 
     private func openWithdrawal(_ sample: Aliquot) {
@@ -237,16 +239,42 @@ private struct ThawCounter: View {
     @Environment(\.modelContext) private var context
     @EnvironmentObject var app: AppState
     let aliquot: Aliquot
+    @State private var thawSample: Aliquot?
     var body: some View {
         CounterButtons(value: aliquot.countedThaws, label: compactThawCount(aliquot), sampleName: "for \(aliquot.label)",
                        decreaseHelp: aliquot.nextThawCorrectionVolumeUL > 0 ? "Undo the latest thaw and restore its 1.5 µL measurement." : "Correct the thaw count by one. This entry has no measurement volume to restore.",
-                       increaseHelp: "Record one thaw and deduct 1.5 µL for concentration measurement.",
-                       decrease: { change(.thawCountDecrease) }, increase: { change(.thawWithMeasurement) })
+                       increaseHelp: "Add a thaw, then choose whether you used 1.5 µL to measure concentration.",
+                       decrease: { change(.thawCountDecrease) }, increase: { thawSample = aliquot })
             .disabled(aliquot.archived)
+            .modifier(ThawConfirmation(sample: $thawSample))
     }
     private func change(_ kind: EventKind) {
         do { try Inventory.record(kind, for: aliquot, in: context) }
         catch { app.error = error.localizedDescription }
+    }
+}
+
+private struct ThawConfirmation: ViewModifier {
+    @Binding var sample: Aliquot?
+    @Environment(\.modelContext) private var context
+    @EnvironmentObject var app: AppState
+
+    func body(content: Content) -> some View {
+        content.alert("Used 1.5 µL to measure concentration?", isPresented: Binding(
+            get: { sample != nil }, set: { if !$0 { sample = nil } }), presenting: sample) { sample in
+                Button("Yes") { record(sample, measured: true) }
+                Button("No") { record(sample, measured: false) }
+                Button("Cancel", role: .cancel) { }
+            } message: { sample in
+                Text("\(sample.label) · Adds one thaw. Yes also subtracts 1.5 µL from the remaining volume.")
+            }
+    }
+
+    private func record(_ sample: Aliquot, measured: Bool) {
+        do {
+            try Inventory.record(measured ? .thawWithMeasurement : .thawCountIncrease, for: sample,
+                                 notes: measured ? "Used 1.5 µL for concentration measurement." : "No concentration measurement.", in: context)
+        } catch { app.error = error.localizedDescription }
     }
 }
 
@@ -279,7 +307,7 @@ struct SampleDetailsView: View {
                         VStack(alignment: .leading, spacing: 6) {
                             Text("Thaws").font(.caption).foregroundStyle(.secondary)
                             ThawCounter(aliquot: aliquot)
-                            Text("+ uses 1.5 µL").font(.caption2).foregroundStyle(.secondary)
+                            Text("+ asks about measurement").font(.caption2).foregroundStyle(.secondary)
                         }.frame(maxWidth: .infinity, alignment: .leading)
                     }
                     DisclosureGroup("History (\(aliquot.events.count))", isExpanded: $showHistory) {
@@ -361,7 +389,7 @@ private struct HistoryRow: View {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title).fontWeight(.medium)
-                    if event.valueAfter != nil || event.kind == EventKind.withdrawal.rawValue, !event.notes.isEmpty { Text(event.notes).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
+                    if event.valueAfter != nil || [EventKind.withdrawal.rawValue, EventKind.thawCountIncrease.rawValue].contains(event.kind), !event.notes.isEmpty { Text(event.notes).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
                     if !event.experiment.isEmpty { Text(event.experiment).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
                 }
                 Spacer()

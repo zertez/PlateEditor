@@ -126,21 +126,11 @@ func quantity(_ text: String, name: String, optional: Bool = false) throws -> Do
     var location: String { orderedEvents.last(where: { $0.newLocation != nil })?.newLocation ?? initialLocation }
     var massUG: Double? { guard let concentration = currentConcentrationMgML, let remainingUL else { return nil };return concentration * remainingUL }
     func takenOutUL(on day: Date, calendar: Calendar = .current) -> Double {
-        // Count actual usage, not measured balance corrections. A refunded thaw
-        // measurement belongs to its original day, even if corrected later.
-        var thaws: [SampleEvent] = []
-        var refunded = Set<UUID>()
-        for event in orderedEvents {
-            switch EventKind(rawValue: event.kind) {
-            case .thaw, .thawCountIncrease, .thawWithMeasurement: thaws.append(event)
-            case .thawCountDecrease:
-                if let original = thaws.popLast(), event.volumeDeltaUL > 0 { refunded.insert(original.id) }
-            default: break
-            }
-        }
+        // This column is for manually logged use, such as assays. Concentration
+        // measurements still affect the balance and history, but are separate.
         return events.reduce(0) { total, event in
-            guard [EventKind.withdrawal.rawValue, EventKind.thawWithMeasurement.rawValue].contains(event.kind),
-                  !refunded.contains(event.id), let date = event.date, calendar.isDate(date, inSameDayAs: day) else { return total }
+            guard event.kind == EventKind.withdrawal.rawValue,
+                  let date = event.date, calendar.isDate(date, inSameDayAs: day) else { return total }
             return total - event.volumeDeltaUL
         }
     }
