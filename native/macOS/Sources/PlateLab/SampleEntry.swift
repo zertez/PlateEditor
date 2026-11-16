@@ -170,13 +170,14 @@ struct EventForm: View {
         }.padding(24).frame(width: 440).fixedSize(horizontal: false, vertical: true)
             .onAppear {
                 experiment = plateTitle; location = aliquot.location
-                if kind == .volumeCorrection { amount = aliquot.remainingUL.map { String($0) } ?? "" }
+                if kind == .volumeCorrection { amount = aliquot.remainingUL.map(editableNumber) ?? "" }
                 focusAmount = true
             }
     }
     private func save() {
         do {
-            let value = (kind == .withdrawal || kind == .volumeCorrection) ? try quantity(amount, name: "volume") : nil
+            let value = (kind == .withdrawal || kind == .volumeCorrection)
+                ? try editedQuantity(amount, original: kind == .volumeCorrection ? aliquot.remainingUL : nil, name: "volume") : nil
             try Inventory.record(kind, for: aliquot, amount: value, location: location, notes: notes,
                                  experiment: experiment, plateID: plateID, wells: wellNames.joined(separator: ", "), in: context)
             dismiss()

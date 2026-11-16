@@ -1,10 +1,16 @@
 import SwiftUI
 import SwiftData
 
-struct EditableSampleValue: View {
+struct SampleValueEdit: Identifiable {
+    let id = UUID()
     let sample: Aliquot
     let field: SampleValueField
-    @State private var showEditor = false
+}
+
+struct EditableSampleValue: View {
+    @EnvironmentObject var app: AppState
+    let sample: Aliquot
+    let field: SampleValueField
 
     var body: some View {
         Text(field.value(in: sample).map(number) ?? "—")
@@ -16,19 +22,16 @@ struct EditableSampleValue: View {
             .accessibilityLabel("\(field.title) for \(sample.label), \(field.unit)")
             .accessibilityValue(field.value(in: sample).map(number) ?? "Unknown")
             .help("Double-click to open the editor. Return moves to the reason for change. Escape cancels.")
-            .popover(isPresented: $showEditor, arrowEdge: .bottom) {
-                SampleValuePopover(sample: sample, field: field) { showEditor = false }
-            }
     }
 
     private func openEditor() {
         guard !sample.archived else { return }
-        showEditor = true
+        app.valueEdit = SampleValueEdit(sample: sample, field: field)
     }
 }
 
-// The value and reason share one popover, with focus owned by its window.
-private struct SampleValuePopover: View {
+// One centered dialog keeps the value and reason together during the slide.
+struct SampleValueEditor: View {
     @Environment(\.modelContext) private var context
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let sample: Aliquot
@@ -49,7 +52,7 @@ private struct SampleValuePopover: View {
         self.sample = sample; self.field = field; self.close = close
         let value = field.value(in: sample)
         _expected = State(initialValue: value)
-        _draft = State(initialValue: value.map { String($0) } ?? "")
+        _draft = State(initialValue: value.map(editableNumber) ?? "")
     }
 
     private var pageTransition: AnyTransition {
@@ -132,7 +135,7 @@ private struct SampleValuePopover: View {
 
     private func advance() {
         do {
-            guard let value = try quantity(draft, name: field.rawValue) else { return }
+            guard let value = try editedQuantity(draft, original: expected, name: field.rawValue) else { return }
             guard value != expected else { close(); return }
             proposed = value
             changeStep(to: .reason)

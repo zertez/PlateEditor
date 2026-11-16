@@ -25,12 +25,12 @@ struct BatchForm: View {
             if let error { Text(error).foregroundStyle(.red).font(.callout) }
             HStack { Spacer();Button("Cancel",role:.cancel) { dismiss() };Button("Save",action:save).buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction) }
         }.padding(24).frame(width:570,height:560)
-        .onAppear { if let b=editing { name=b.name;variant=b.variant;batchLabel=b.batchLabel;concentration=b.concentrationMgML.map { String($0) } ?? "";buffer=b.buffer;notes=b.notes;prepared=b.preparedOn ?? Date();hasDate=b.preparedOn != nil } }
+        .onAppear { if let b=editing { name=b.name;variant=b.variant;batchLabel=b.batchLabel;concentration=b.concentrationMgML.map(editableNumber) ?? "";buffer=b.buffer;notes=b.notes;prepared=b.preparedOn ?? Date();hasDate=b.preparedOn != nil } }
     }
     private func save() {
         do {
             guard !clean(name).isEmpty else { throw LabError("Give the protein a name.") }
-            let c=try quantity(concentration,name:"concentration",optional:true)
+            let c=try editedQuantity(concentration,original:editing?.concentrationMgML,name:"concentration",optional:true)
             if let b=editing { b.name=clean(name);b.variant=clean(variant);b.batchLabel=clean(batchLabel);b.concentrationMgML=c;b.buffer=clean(buffer);b.notes=clean(notes);b.preparedOn=hasDate ? prepared:nil;try Inventory.save(context) }
             else { try Inventory.addBatch(ProteinBatch(name:clean(name),variant:clean(variant),batchLabel:clean(batchLabel),preparedOn:hasDate ? prepared:nil,concentration:c,buffer:clean(buffer),notes:clean(notes)),in:context) }
             dismiss()

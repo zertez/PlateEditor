@@ -3,6 +3,34 @@ import SwiftData
 @testable import PlateLab
 
 final class InventoryTests: XCTestCase {
+    func testThreeDecimalPlaceInputsPreserveUntouchedMeasurements() throws {
+        let stored = 483.84000000000003
+        XCTAssertEqual(editableNumber(stored), "483.840")
+        XCTAssertEqual(editableNumber(1498.5), "1498.500")
+        XCTAssertEqual(editableNumber(0.000123456), "0.000")
+        XCTAssertEqual(editableNumber(0.76), "0.760")
+        XCTAssertEqual(editableNumber(0), "0.000")
+        XCTAssertEqual(editableNumber(-12.3456), "-12.346")
+        XCTAssertEqual(try editedQuantity("483.840", original: stored, name: "volume"), stored)
+        XCTAssertEqual(try editedQuantity("0.000", original: 0.000123456, name: "concentration"), 0.000123456)
+        XCTAssertEqual(try editedQuantity("480", original: stored, name: "volume"), 480)
+        XCTAssertEqual(try editedQuantity("483.75", original: stored, name: "volume"), 483.75)
+        XCTAssertNil(try editedQuantity("", original: stored, name: "concentration", optional: true))
+        XCTAssertThrowsError(try editedQuantity("", original: stored, name: "volume"))
+        XCTAssertThrowsError(try editedQuantity("-1", original: stored, name: "volume"))
+    }
+    @MainActor func testAcceptingRoundedVolumeDoesNotCreateAChange() throws {
+        let (app, _, sample) = try fixture()
+        sample.startingVolumeUL = 483.84000000000003
+        try Inventory.save(app.container.mainContext)
+        let original = try XCTUnwrap(sample.remainingUL)
+        let entered = try XCTUnwrap(editedQuantity(editableNumber(original), original: original, name: "volume"))
+        try Inventory.changeValue(.volume, for: sample, to: entered, expected: original,
+                                  reason: "Unchanged input", in: app.container.mainContext)
+        XCTAssertEqual(sample.remainingUL, original)
+        XCTAssertTrue(sample.events.isEmpty)
+    }
+
     @MainActor func testDirectValueChangesRequireReasonsAndKeepBeforeAfterHistory() throws {
         let (app,batch,a)=try fixture();let context=app.container.mainContext
         let start=Date()

@@ -14,7 +14,7 @@
   };
   const defaults = {version:2, mode:'overview', width:240, font:13, wide:false, crop:false, print:'details', fields:Object.fromEntries(Object.keys(fields).map(k=>[k,true]))};
   const escape = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  const number = n => Number(n).toLocaleString(undefined,{maximumFractionDigits:6});
+  const number = n => Number(n).toLocaleString(undefined,{minimumFractionDigits:3,maximumFractionDigits:3});
   function normalize(input = {}) {
     if (!input || typeof input !== 'object') input = {};
     const inRange = (value, min, max, fallback) => typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max ? value : fallback;

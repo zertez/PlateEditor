@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 @MainActor final class AppState: ObservableObject {
     let container: ModelContainer
     let dataDirectory: URL
+    @Published var valueEdit: SampleValueEdit?
     @Published var error: String?
     @Published var notice: String?
     @Published var section: Section = .samples

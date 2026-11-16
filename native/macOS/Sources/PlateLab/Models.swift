@@ -25,7 +25,16 @@ struct LabError: LocalizedError {
     init(_ message: String) { self.message = message }
     var errorDescription: String? { message }
 }
-func number(_ value: Double) -> String { value.formatted(.number.precision(.fractionLength(0...4))) }
+// Round presentation only. Persisted measurements and calculations retain their precision.
+func number(_ value: Double) -> String { value.formatted(.number.precision(.fractionLength(3))) }
+func editableNumber(_ value: Double) -> String {
+    value.formatted(.number.locale(Locale(identifier: "en_US_POSIX")).precision(.fractionLength(3)).grouping(.never))
+}
+func editedQuantity(_ draft: String, original: Double?, name: String, optional: Bool = false) throws -> Double? {
+    // Accepting an untouched rounded field must not replace the original measurement.
+    if let original, clean(draft) == editableNumber(original) { return original }
+    return try quantity(draft, name: name, optional: optional)
+}
 func volumeLabel(_ value: Double?) -> String { value.map { "\(number($0)) µL" } ?? "Unknown volume" }
 func clean(_ text: String) -> String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
 func quantity(_ text: String, name: String, optional: Bool = false) throws -> Double? {

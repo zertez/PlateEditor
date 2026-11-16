@@ -4,7 +4,7 @@
   const M=PlateSetup, $=id=>document.getElementById(id), KEY='plate-setup.library.v1', V=PlateSetupDisplay, DISPLAY_KEY='plate-setup.display.v1';
   const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const color=c=>/^#[0-9a-f]{6}$/i.test(c)?c:'#a0b7a8';
-  const fmt=n=>Number(n).toLocaleString(undefined,{maximumFractionDigits:6});
+  const fmt=n=>Number(n).toLocaleString(undefined,{minimumFractionDigits:3,maximumFractionDigits:3});
   let library={version:1,projects:[],active:null}, storageOK=true, selection=new Set(), anchor=null, layer=0, editIndex=null, mode=null, drag=null, display=V.normalize();
   const histories=new Map();
   function project(){return library.projects.find(p=>p.id===library.active);}
