@@ -100,6 +100,36 @@
     let tag=a.Tags.find(t=>t.Layer===layer); if(!tag){tag={Layer:layer,Wells:[]};a.Tags.push(tag);}
     unique.forEach(Index=>{const w={Index,RangeIndex:1}; if(value!==null){w.Value=value;w.Unit=unit;project.layout[0].Layers[layer].push(clone(w));}tag.Wells.push(w);});
   }
+  function conditionContents(a) {
+    const recipe=(a.SetupRecipe||[]).map(r=>({name:r.name,volume:r.volume,concentration:r.concentration}));
+    return {Name:a.Name.trim(),Color:a.Color,Type:a.Type,SetupNotes:a.SetupNotes||'',SetupRecipe:recipe,SetupTargetVolume:a.SetupTargetVolume??null};
+  }
+  // Applying a draft is scoped to these wells. Only the explicit condition-wide
+  // save may change a shared recipe in place while other wells still use it.
+  function applyCondition(project,indices,spec,existing=null,layer=0,value=null,unit='') {
+    const selected=[...new Set(indices)];
+    if(!selected.length)throw Error('Select at least one well first.');
+    const next=clone(project),original=existing===null?null:next.layout[1][existing];
+    if(existing!==null && !original)throw Error('Choose an existing condition or start a new one.');
+    if(original?.Type==='Range')throw Error('Edit ranges in the original editor.');
+    if(!spec.Name?.trim())throw Error('Give this condition a name.');
+    ensureEditable(next,selected,layer,existing);
+    let index;
+    if(original && JSON.stringify(conditionContents(original))===JSON.stringify(conditionContents(spec))) {
+      index=existing;
+    } else if(original && original.Tags.some(t=>t.Wells.some(w=>t.Layer!==layer || !selected.includes(w.Index)))) {
+      const base=spec.Name.trim();let name=base,n=1;
+      while(next.layout[1].some(a=>a.Name===name)) { name=`${base} (variant${n===1?'':' '+n})`;n++; }
+      index=condition(next,{...original,...spec,Name:name,Tags:[]});
+      clear(next,selected,layer);
+    } else {
+      index=condition(next,spec,existing);
+    }
+    assign(next,selected,index,layer,value,unit);
+    validateLayout(next.layout);
+    project.layout=next.layout;
+    return index;
+  }
   function clear(project,indices,layer=0) {
     if(indices.some(i=>project.locked.includes(i))) throw Error('Unlock used wells before clearing them.');
     project.layout[0].Layers[layer]=project.layout[0].Layers[layer].filter(w=>!indices.includes(w.Index));
@@ -115,6 +145,6 @@
     // Prefix text that spreadsheet software could interpret as a formula.
     return '\uFEFF'+rows.map(row=>row.map(v=>'"'+(typeof v==='string'&&/^[\s]*[=+@-]/.test(v)?"'"+v:String(v)).replaceAll('"','""')+'"').join(',')).join('\r\n');
   }
-  const api={clone,colors,id,rowName,wellName,validateLayout,validateRecipe,newProject,importProject,cells,recipeTotal,rectangle,block,ensureEditable,condition,assign,clear,csv};
+  const api={clone,colors,id,rowName,wellName,validateLayout,validateRecipe,newProject,importProject,cells,recipeTotal,rectangle,block,ensureEditable,condition,assign,applyCondition,clear,csv};
   if(typeof module!=='undefined' && module.exports)module.exports=api; else root.PlateSetup=api;
 })(globalThis);
