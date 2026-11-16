@@ -2,6 +2,8 @@
 
 A first native Mac app in the existing PlateEditor fork. SwiftUI provides the sample library, SwiftData stores sample history, and a bundled WKWebView runs the existing plate workspace offline. No server or account is required. Requires macOS 14 or later; builds for the Mac's architecture (including Apple Silicon).
 
+PlateLab uses light mode throughout, independently of the Mac’s system appearance.
+
 ## Build and open
 
 Install Xcode and Node.js, then run from the repository root:

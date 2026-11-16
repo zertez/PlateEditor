@@ -15,6 +15,10 @@ import SwiftData
 }
 @main struct PlateLabApp: App {
     @StateObject private var bootstrap=Bootstrap()
+    init() {
+        // Keep native windows, sheets, file panels, and the embedded editor in light mode.
+        NSApplication.shared.appearance = NSAppearance(named: .aqua)
+    }
     var body: some Scene {
         Window("PlateLab", id: "main") {
             if let state=bootstrap.state {
