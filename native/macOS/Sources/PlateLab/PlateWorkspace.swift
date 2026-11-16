@@ -61,6 +61,7 @@ struct PlateWebView: NSViewRepresentable {
         let app: AppState
         weak var webView: WKWebView?
         var webRoot: URL?
+        private var printOperation: NSPrintOperation?
         init(app: AppState) { self.app=app }
         func trusted(_ url: URL?) -> Bool {
             guard let url,let root=webRoot,url.isFileURL else { return false }
@@ -86,15 +87,27 @@ struct PlateWebView: NSViewRepresentable {
                     let fileType: UTType? = filename.hasSuffix(".csv") ? .commaSeparatedText:filename.hasSuffix(".json") ? .json:nil
                     try app.saveFile(data:Data(text.utf8),suggestedName:filename,type:fileType)
                 case "print":
-                    guard let webView else { throw LabError("The plate editor is not ready to print.") }
+                    guard let webView, let window=webView.window else { throw LabError("The plate editor is not ready to print.") }
+                    guard printOperation == nil else { throw LabError("Finish the current print or PDF export first.") }
                     let info=NSPrintInfo.shared.copy() as! NSPrintInfo
                     info.paperSize=NSSize(width:595.28,height:841.89);info.orientation = .landscape
                     info.topMargin=34;info.bottomMargin=34;info.leftMargin=34;info.rightMargin=34
-                    let operation=webView.printOperation(with:info);operation.showsPrintPanel=true;operation.showsProgressPanel=true;operation.run()
+                    info.isVerticallyCentered=false;info.horizontalPagination = .fit;info.verticalPagination = .automatic
+                    let operation=webView.printOperation(with:info)
+                    operation.view?.frame=webView.bounds
+                    operation.jobTitle=app.currentPlateTitle.isEmpty ? "PlateLab plate" : app.currentPlateTitle
+                    operation.showsPrintPanel=true;operation.showsProgressPanel=true
+                    printOperation=operation
+                    // WebKit must render asynchronously. Blocking with run() shows a preview
+                    // but can save empty PDF pages because the drawing callbacks cannot finish.
+                    operation.runModal(for:window,delegate:self,didRun:#selector(printDidFinish(_:success:contextInfo:)),contextInfo:nil)
                 default: throw LabError("Unsupported app request.")
                 }
                 replyHandler(NSNull(),nil)
             } catch { replyHandler(nil,error.localizedDescription) }
+        }
+        @objc private func printDidFinish(_ operation: NSPrintOperation, success: Bool, contextInfo: UnsafeMutableRawPointer?) {
+            printOperation=nil
         }
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy)->Void) {
             guard let url=navigationAction.request.url else { decisionHandler(.cancel);return }

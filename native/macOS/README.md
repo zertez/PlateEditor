@@ -36,6 +36,8 @@ Leave the volume blank when it is unknown. The app preserves that distinction fr
 
 The Plates tab retains the compact plate overview, compact hover details, recipes, volumes, layout import, and detailed print/export settings. Import an existing `.save` or `.plate.json` once; subsequent edits save automatically on this Mac. The Mac library is separate from your browser library. Browser-only recipes need a `.plate.json` backup to transfer them completely.
 
+**Print / PDF** offers readable details across multiple pages or the whole plate on one landscape page. Choose PDF in the Mac print sheet to save it. The native print operation runs asynchronously so WebKit can finish drawing the saved pages. When checking this flow, reopen the saved PDF (the preview alone is insufficient), check that every well is present, and verify that a second export works after saving or cancelling the first.
+
 Select the destination wells, then choose **Record completed sample transfer…** to record the actual total volume used from a source aliquot. The event retains the plate ID, title, and selected well names. Planning and editing a plate never deduct inventory. This first version records transfers in the sample history; it does not automatically fill well recipes or calculate pipetting transfers.
 
 The original editor opens an analysis copy. Its changes do not update saved recipes. The native save/print integrations apply to the Plate Setup workspace; original-editor downloads and analysis windows remain available in the browser version.
