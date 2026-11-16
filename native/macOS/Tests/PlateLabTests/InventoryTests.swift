@@ -10,6 +10,10 @@ final class InventoryTests: XCTestCase {
         XCTAssertEqual(proteinMassLabel(999.999), "\(number(999.999)) µg")
         XCTAssertEqual(proteinMassLabel(1000), "\(number(1)) mg")
         XCTAssertEqual(proteinMassLabel(593.09 * 4.18), "\(number(2.4791162)) mg")
+        XCTAssertEqual(proteinMassLabel(593.09 * 4.18, unit: .micrograms), "\(number(2479.1162)) µg")
+        XCTAssertEqual(proteinMassLabel(483.84 * 0.76, unit: .milligrams), "\(number(0.3677184)) mg")
+        XCTAssertEqual(proteinMassLabel(0, unit: .milligrams), "\(number(0)) mg")
+        for unit in ProteinMassUnit.allCases { XCTAssertEqual(proteinMassLabel(nil, unit: unit), "—") }
     }
 
     func testThreeDecimalPlaceInputsPreserveUntouchedMeasurements() throws {

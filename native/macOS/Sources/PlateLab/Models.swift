@@ -35,9 +35,14 @@ func editedQuantity(_ draft: String, original: Double?, name: String, optional: 
     if let original, clean(draft) == editableNumber(original) { return original }
     return try quantity(draft, name: name, optional: optional)
 }
-func proteinMassLabel(_ micrograms: Double?) -> String {
+enum ProteinMassUnit: String, CaseIterable, Identifiable {
+    case automatic = "Auto", micrograms = "µg", milligrams = "mg"
+    var id: String { rawValue }
+}
+func proteinMassLabel(_ micrograms: Double?, unit: ProteinMassUnit = .automatic) -> String {
     guard let micrograms else { return "—" }
-    return micrograms >= 1000 ? "\(number(micrograms / 1000)) mg" : "\(number(micrograms)) µg"
+    let useMilligrams = unit == .milligrams || (unit == .automatic && micrograms >= 1000)
+    return useMilligrams ? "\(number(micrograms / 1000)) mg" : "\(number(micrograms)) µg"
 }
 func volumeLabel(_ value: Double?) -> String { value.map { "\(number($0)) µL" } ?? "Unknown volume" }
 func clean(_ text: String) -> String { text.trimmingCharacters(in: .whitespacesAndNewlines) }

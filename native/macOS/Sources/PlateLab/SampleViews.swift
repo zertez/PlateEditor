@@ -9,6 +9,7 @@ struct SampleLibraryView: View {
     @State private var search = ""
     @State private var showArchived = false
     @State private var sheet: SampleSheet?
+    @AppStorage("proteinMassDisplayUnit") private var massUnit: ProteinMassUnit = .automatic
 
     private var matching: [Aliquot] {
         aliquots.filter {
@@ -24,6 +25,13 @@ struct SampleLibraryView: View {
                 Text("Protein samples").font(.title2.weight(.semibold))
                 Text("\(matching.count)").foregroundStyle(.secondary)
                 Spacer()
+                HStack(spacing: 6) {
+                    Text("Protein left").font(.callout).foregroundStyle(.secondary)
+                    Picker("Protein amount units", selection: $massUnit) {
+                        ForEach(ProteinMassUnit.allCases) { Text($0.rawValue).tag($0) }
+                    }.labelsHidden().pickerStyle(.segmented).frame(width: 132).controlSize(.small)
+                        .help("Choose µg or mg for every sample, or Auto. 1 mg = 1,000 µg.")
+                }
                 HStack(spacing: 7) {
                     Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
                     TextField("Find a sample", text: $search).textFieldStyle(.plain)
@@ -72,9 +80,9 @@ struct SampleLibraryView: View {
                         EditableSampleValue(sample: a, field: .concentration)
                     }.width(min: 105, ideal: 120, max: 150)
                     TableColumn("Protein left") { a in
-                        Text(proteinMassLabel(a.massUG)).monospacedDigit()
+                        Text(proteinMassLabel(a.massUG, unit: massUnit)).monospacedDigit()
                             .accessibilityLabel("Protein left for \(a.label)")
-                            .accessibilityValue(proteinMassLabel(a.massUG))
+                            .accessibilityValue(proteinMassLabel(a.massUG, unit: massUnit))
                             .help(a.massUG == nil
                                   ? "Enter both remaining volume and concentration to calculate the protein amount."
                                   : "Calculated from remaining volume × concentration. Updates automatically when either value changes.")
@@ -212,6 +220,7 @@ private struct ThawCounter: View {
 }
 
 struct SampleDetailsView: View {
+    @AppStorage("proteinMassDisplayUnit") private var massUnit: ProteinMassUnit = .automatic
     @Environment(\.dismiss) private var dismiss
     let aliquot: Aliquot
     @State private var showNotes = false
@@ -267,7 +276,7 @@ struct SampleDetailsView: View {
                         VStack(alignment: .leading, spacing: 12) {
                             LabeledContent("State", value: aliquot.state.rawValue)
                             LabeledContent("Location", value: aliquot.location.isEmpty ? "Not recorded" : aliquot.location)
-                            if let mass = aliquot.massUG { LabeledContent("Protein remaining", value: proteinMassLabel(mass)) }
+                            if let mass = aliquot.massUG { LabeledContent("Protein remaining", value: proteinMassLabel(mass, unit: massUnit)) }
                             if let buffer = aliquot.batch?.buffer, !buffer.isEmpty { LabeledContent("Buffer", value: buffer) }
                             if let date = aliquot.batch?.preparedOn { LabeledContent("Prepared", value: date.formatted(date: .abbreviated, time: .omitted)) }
                             if aliquot.startingThawCount == nil { Text("Earlier thaw history is unknown.").foregroundStyle(.secondary) }
