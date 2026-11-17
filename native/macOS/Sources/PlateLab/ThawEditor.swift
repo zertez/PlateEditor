@@ -57,8 +57,10 @@ struct ThawEditor: View {
     }
 
     private var resultingVolume: Double? {
-        if volumeChanged == true { return Double(clean(volume)).flatMap { $0.isFinite && $0 >= 0 ? $0 : nil } }
-        return expectedVolume.map { $0 - (measured == true ? concentrationMeasurementVolumeUL : 0) }
+        let beforeMeasurement = volumeChanged == true
+            ? Double(clean(volume)).flatMap { $0.isFinite && $0 >= 0 ? $0 : nil }
+            : expectedVolume
+        return beforeMeasurement.map { $0 - (measured == true ? concentrationMeasurementVolumeUL : 0) }
     }
 
     var body: some View {
@@ -77,14 +79,14 @@ struct ThawEditor: View {
                 if volumeChanged == true {
                     VStack(alignment: .leading, spacing: 7) {
                         HStack {
-                            TextField("Volume now", text: $volume).textFieldStyle(.plain)
+                            TextField("Volume after transfer", text: $volume).textFieldStyle(.plain)
                                 .font(.title3.weight(.medium)).monospacedDigit().focused($focusVolume)
-                                .accessibilityLabel("Current remaining volume, µL").onSubmit(save)
+                                .accessibilityLabel("Volume after transfer, before measurement, µL").onSubmit(save)
                             Text("µL").foregroundStyle(.secondary)
                         }
                         .padding(11).background(Color.teal.opacity(0.06), in: RoundedRectangle(cornerRadius: 9))
                         .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Color.teal.opacity(0.3)))
-                        Text("Enter what is left now, after any 1.5 µL measurement. This will be the final volume.")
+                        Text("Enter the volume after transfer, before the protein measurement. Choosing Yes below subtracts 1.5 µL.")
                             .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }.transition(.opacity.combined(with: .move(edge: .top)))
                 }
@@ -133,8 +135,8 @@ struct ThawEditor: View {
     private func save() {
         guard ready, let measured else { return }
         do {
-            let remaining = volumeChanged == true ? try quantity(volume, name: "remaining volume") : nil
-            try Inventory.recordThaw(for: sample, measured: measured, remainingVolume: remaining,
+            let transferred = volumeChanged == true ? try quantity(volume, name: "volume after transfer") : nil
+            try Inventory.recordThaw(for: sample, measured: measured, transferVolume: transferred,
                                      expectedVolume: expectedVolume, expectedSequence: expectedSequence, in: context)
             close()
         } catch { self.error = error.localizedDescription }

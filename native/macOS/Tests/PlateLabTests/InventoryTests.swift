@@ -3,27 +3,27 @@ import SwiftData
 @testable import PlateLab
 
 final class InventoryTests: XCTestCase {
-    @MainActor func testThawDialogSavesFinalTransferVolumeWithoutDoubleDeductingMeasurement() throws {
+    @MainActor func testThawDialogRecordsTransferBeforeDeductingMeasurement() throws {
         for measured in [false, true] {
-            for finalVolume: Double? in [nil, 90] {
+            for transferVolume: Double? in [nil, 90] {
                 let (app, batch, sample) = try fixture()
                 let before = Date()
-                try Inventory.recordThaw(for: sample, measured: measured, remainingVolume: finalVolume,
+                try Inventory.recordThaw(for: sample, measured: measured, transferVolume: transferVolume,
                                          expectedVolume: 100, expectedSequence: 0, in: app.container.mainContext)
-                let expected = finalVolume ?? (measured ? 98.5 : 100)
+                let expected = (transferVolume ?? 100) - (measured ? 1.5 : 0)
                 XCTAssertEqual(sample.remainingUL, expected)
                 XCTAssertEqual(sample.massUG, expected * 2)
                 XCTAssertEqual(sample.countedThaws, 1)
                 XCTAssertEqual(sample.state, .thawed)
                 XCTAssertEqual(sample.takenOutUL(on: Date()), 0)
-                XCTAssertEqual(sample.events.count, finalVolume == nil ? 1 : 2)
+                XCTAssertEqual(sample.events.count, transferVolume == nil ? 1 : 2)
                 XCTAssertTrue(sample.events.allSatisfy { $0.date! >= before && !$0.dateOnly })
-                if finalVolume != nil {
-                    let correction = try XCTUnwrap(sample.orderedEvents.last)
+                if transferVolume != nil {
+                    let correction = try XCTUnwrap(sample.orderedEvents.first)
                     XCTAssertEqual(correction.kind, EventKind.volumeCorrection.rawValue)
-                    XCTAssertEqual(correction.valueBefore, measured ? 98.5 : 100)
+                    XCTAssertEqual(correction.valueBefore, 100)
                     XCTAssertEqual(correction.valueAfter, 90)
-                    XCTAssertEqual(correction.date, sample.orderedEvents.first?.date)
+                    XCTAssertEqual(correction.date, sample.orderedEvents.last?.date)
                     XCTAssertTrue(correction.notes.contains("supernatant"))
                 }
                 let backup = try JSONDecoder().decode(SampleBackup.self, from: SampleBackup(batches: [batch]).data())
@@ -33,7 +33,7 @@ final class InventoryTests: XCTestCase {
                 XCTAssertEqual(copy.remainingUL, expected)
                 XCTAssertEqual(copy.countedThaws, 1)
                 try Inventory.record(.thawCountDecrease, for: sample, in: app.container.mainContext)
-                XCTAssertEqual(sample.remainingUL, finalVolume ?? 100)
+                XCTAssertEqual(sample.remainingUL, transferVolume ?? 100)
                 XCTAssertEqual(sample.countedThaws, 0)
             }
         }
@@ -42,11 +42,11 @@ final class InventoryTests: XCTestCase {
     @MainActor func testThawDialogCanEstablishAnUnknownBalanceAndRecordZero() throws {
         let (app, batch, sample) = try fixture()
         sample.startingVolumeUL = nil
-        try Inventory.recordThaw(for: sample, measured: true, remainingVolume: 0,
+        try Inventory.recordThaw(for: sample, measured: false, transferVolume: 0,
                                  expectedVolume: nil, expectedSequence: 0, in: app.container.mainContext)
         XCTAssertEqual(sample.remainingUL, 0)
-        XCTAssertEqual(sample.orderedEvents.last?.volumeAfterUL, 0)
-        XCTAssertNil(sample.orderedEvents.last?.valueBefore)
+        XCTAssertEqual(sample.orderedEvents.first?.volumeAfterUL, 0)
+        XCTAssertNil(sample.orderedEvents.first?.valueBefore)
         XCTAssertEqual(sample.nextThawCorrectionVolumeUL, 0)
         try SampleBackup(batches: [batch]).validate()
     }
@@ -54,31 +54,60 @@ final class InventoryTests: XCTestCase {
     @MainActor func testThawDialogRejectsInvalidOrStaleChangesWithoutPartialEvents() throws {
         let (app, _, sample) = try fixture()
         let context = app.container.mainContext
-        for volume in [-1, Double.nan, Double.infinity] {
-            XCTAssertThrowsError(try Inventory.recordThaw(for: sample, measured: true, remainingVolume: volume,
+        for volume in [-1, 0, 1.49, Double.nan, Double.infinity] {
+            XCTAssertThrowsError(try Inventory.recordThaw(for: sample, measured: true, transferVolume: volume,
                                                           expectedVolume: 100, expectedSequence: 0, in: context))
         }
-        XCTAssertThrowsError(try Inventory.recordThaw(for: sample, measured: true, remainingVolume: 90,
+        XCTAssertThrowsError(try Inventory.recordThaw(for: sample, measured: true, transferVolume: 90,
                                                       expectedVolume: 99, expectedSequence: 0, in: context))
         sample.archived = true
-        XCTAssertThrowsError(try Inventory.recordThaw(for: sample, measured: false, remainingVolume: 90,
+        XCTAssertThrowsError(try Inventory.recordThaw(for: sample, measured: false, transferVolume: 90,
                                                       expectedVolume: 100, expectedSequence: 0, in: context))
         sample.archived = false; sample.startingVolumeUL = 1
-        XCTAssertThrowsError(try Inventory.recordThaw(for: sample, measured: true, remainingVolume: 0,
+        XCTAssertThrowsError(try Inventory.recordThaw(for: sample, measured: true, transferVolume: 0,
                                                       expectedVolume: 1, expectedSequence: 0, in: context))
         sample.startingVolumeUL = 100; sample.startingThawCount = Int.max
-        XCTAssertThrowsError(try Inventory.recordThaw(for: sample, measured: false, remainingVolume: nil,
+        XCTAssertThrowsError(try Inventory.recordThaw(for: sample, measured: false, transferVolume: nil,
                                                       expectedVolume: 100, expectedSequence: 0, in: context))
         XCTAssertTrue(sample.events.isEmpty)
         sample.startingThawCount = nil
-        try Inventory.recordThaw(for: sample, measured: false, remainingVolume: nil,
+        try Inventory.recordThaw(for: sample, measured: false, transferVolume: nil,
                                  expectedVolume: 100, expectedSequence: 0, in: context)
         // Even if the balance did not change, the same dialog cannot save twice.
-        XCTAssertThrowsError(try Inventory.recordThaw(for: sample, measured: false, remainingVolume: nil,
+        XCTAssertThrowsError(try Inventory.recordThaw(for: sample, measured: false, transferVolume: nil,
                                                       expectedVolume: 100, expectedSequence: 0, in: context))
         XCTAssertEqual(sample.events.count, 1)
         XCTAssertEqual(sample.remainingUL, 100)
         XCTAssertEqual(sample.countedThaws, 1)
+    }
+
+    @MainActor func testTransfer1250ThenMeasurementLeaves1248Point5() throws {
+        let (app, _, sample) = try fixture()
+        sample.startingVolumeUL = 1295
+        try Inventory.recordThaw(for: sample, measured: true, transferVolume: 1250,
+                                 expectedVolume: 1295, expectedSequence: 0, in: app.container.mainContext)
+        XCTAssertEqual(sample.remainingUL, 1248.5)
+        XCTAssertEqual(sample.countedThaws, 1)
+        XCTAssertEqual(sample.orderedEvents.map(\.kind), [EventKind.volumeCorrection.rawValue, EventKind.thawWithMeasurement.rawValue])
+        XCTAssertEqual(sample.orderedEvents.first?.valueBefore, 1295)
+        XCTAssertEqual(sample.orderedEvents.first?.valueAfter, 1250)
+        XCTAssertEqual(sample.orderedEvents.last?.volumeDeltaUL, -1.5)
+        XCTAssertEqual(sample.nextThawCorrectionVolumeUL, 1.5)
+        XCTAssertEqual(sample.takenOutUL(on: Date()), 0)
+    }
+
+    @MainActor func testMeasurementUsesUpdatedTransferBalanceForAvailability() throws {
+        for baseline: Double? in [nil, 0, 1] {
+            let (app, batch, sample) = try fixture()
+            sample.startingVolumeUL = baseline
+            try Inventory.recordThaw(for: sample, measured: true, transferVolume: 1.5,
+                                     expectedVolume: baseline, expectedSequence: 0, in: app.container.mainContext)
+            XCTAssertEqual(sample.remainingUL, 0)
+            XCTAssertEqual(sample.nextThawCorrectionVolumeUL, 1.5)
+            try SampleBackup(batches: [batch]).validate()
+            try Inventory.record(.thawCountDecrease, for: sample, in: app.container.mainContext)
+            XCTAssertEqual(sample.remainingUL, 1.5)
+        }
     }
 
     @MainActor func testQuickWithdrawalLogsReasonTimeAndUpdatesBalanceAndMassOnce() throws {
@@ -574,13 +603,13 @@ final class InventoryTests: XCTestCase {
             try Inventory.changeValue(.concentration,for:a,to:1.5,expected:nil,reason:"New measurement",in:context)
             try app!.writeJSON(["version":1,"projects":[],"active":NSNull()] as [String:Any],name:"plates.json")
             XCTAssertEqual(a.remainingUL,31.5)
-            try Inventory.recordThaw(for:a,measured:true,remainingVolume:25,expectedVolume:31.5,expectedSequence:5,in:context)
+            try Inventory.recordThaw(for:a,measured:true,transferVolume:25,expectedVolume:31.5,expectedSequence:5,in:context)
         }
         app=nil
         let reopened=try AppState(directory:directory)
         let a=try XCTUnwrap(reopened.container.mainContext.fetch(FetchDescriptor<Aliquot>()).first)
-        XCTAssertEqual(a.remainingUL,25);XCTAssertEqual(a.events.count,7);XCTAssertEqual(a.thawLabel,"2")
-        XCTAssertEqual(a.currentConcentrationMgML,1.5);XCTAssertEqual(a.massUG,37.5)
+        XCTAssertEqual(a.remainingUL,23.5);XCTAssertEqual(a.events.count,7);XCTAssertEqual(a.thawLabel,"2")
+        XCTAssertEqual(a.currentConcentrationMgML,1.5);XCTAssertEqual(a.massUG,35.25)
         let plates=try XCTUnwrap(reopened.readJSON("plates.json",fallback:[:]) as? [String:Any])
         XCTAssertEqual(plates["version"] as? Int,1)
     }
