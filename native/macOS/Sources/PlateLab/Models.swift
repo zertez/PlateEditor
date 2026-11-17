@@ -244,6 +244,36 @@ func quantity(_ text: String, name: String, optional: Bool = false) throws -> Do
         guard expected != value else { return }
         try record(field == .volume ? .volumeCorrection : .concentrationCorrection, for: sample, amount: value, notes: reason, in: context)
     }
+    // A measured remaining volume is the final balance, including any measurement
+    // already taken. Validate everything first, then save both log entries together.
+    static func recordThaw(for sample: Aliquot, measured: Bool, remainingVolume: Double?, expectedVolume: Double?, expectedSequence: Int, in context: ModelContext) throws {
+        guard !sample.archived else { throw LabError("Restore this sample before recording a thaw.") }
+        guard sample.remainingUL == expectedVolume, (sample.events.map(\.sequence).max() ?? 0) == expectedSequence else {
+            throw LabError("This sample changed while the dialog was open. Cancel and open it again.")
+        }
+        guard sample.countedThaws < Int.max else { throw LabError("The thaw count is already at its maximum.") }
+        if let volume = remainingVolume, !volume.isFinite || volume < 0 { throw LabError("Enter a non-negative remaining volume.") }
+        if measured, let volume = expectedVolume, volume < concentrationMeasurementVolumeUL {
+            throw LabError("The recorded volume is below 1.5 µL. Correct it first, or choose No for the measurement.")
+        }
+        let date = Date()
+        let delta = measured ? -concentrationMeasurementVolumeUL : 0
+        let afterMeasurement = expectedVolume.map { $0 + delta }
+        let thaw = SampleEvent(sequence: expectedSequence + 1, date: date,
+                               kind: measured ? .thawWithMeasurement : .thawCountIncrease,
+                               delta: delta, state: .thawed,
+                               notes: measured ? "Used 1.5 µL for concentration measurement." : "No concentration measurement.")
+        context.insert(thaw); thaw.aliquot = sample
+        if let volume = remainingVolume {
+            let correction = SampleEvent(sequence: expectedSequence + 2, date: date, kind: .volumeCorrection,
+                                         delta: afterMeasurement.map { volume - $0 } ?? 0,
+                                         volumeAfter: afterMeasurement == nil ? volume : nil,
+                                         notes: "Centrifuged after thawing; transferred supernatant to a new tube. Recorded the final remaining volume, after any concentration measurement.",
+                                         valueBefore: afterMeasurement, valueAfter: volume)
+            context.insert(correction); correction.aliquot = sample
+        }
+        try save(context)
+    }
     static func withdraw(_ amount: Double, from sample: Aliquot, expectedVolume: Double?, reason: String, in context: ModelContext) throws {
         guard sample.remainingUL == expectedVolume else { throw LabError("The remaining volume changed while you were entering this withdrawal. Cancel and enter it again.") }
         guard !clean(reason).isEmpty else { throw LabError("Enter a reason for taking out the sample.") }

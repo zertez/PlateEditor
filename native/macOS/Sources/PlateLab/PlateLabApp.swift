@@ -71,23 +71,7 @@ struct RootView: View {
                 PlateWorkspaceView().opacity(app.section == .plates ? 1:0).allowsHitTesting(app.section == .plates).accessibilityHidden(app.section != .plates)
             }
         }
-        .disabled(app.valueEdit != nil)
-        .accessibilityHidden(app.valueEdit != nil)
-        .overlay {
-            if let edit = app.valueEdit {
-                ZStack {
-                    Color.black.opacity(0.12).ignoresSafeArea()
-                        .contentShape(Rectangle()).onTapGesture { }
-                        .accessibilityHidden(true)
-                    SampleValueEditor(sample: edit.sample, action: edit.action) { app.valueEdit = nil }
-                        .id(edit.id)
-                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
-                        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(.white.opacity(0.7)))
-                        .shadow(color: .black.opacity(0.16), radius: 24, y: 8)
-                        .accessibilityAddTraits(.isModal)
-                }.frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-        }
+        .modifier(SampleEditorOverlay())
         .alert("Could not complete that action",isPresented:Binding(get:{app.error != nil},set:{if !$0 {app.error=nil}})) { Button("OK",role:.cancel) { app.error=nil } } message: { Text(app.error ?? "") }
         .alert("PlateLab",isPresented:Binding(get:{app.notice != nil},set:{if !$0 {app.notice=nil}})) { Button("OK",role:.cancel) { app.notice=nil } } message: { Text(app.notice ?? "") }
     }

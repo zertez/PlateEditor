@@ -9,7 +9,6 @@ struct SampleLibraryView: View {
     @State private var search = ""
     @State private var showArchived = false
     @State private var sheet: SampleSheet?
-    @State private var thawSample: Aliquot?
     @State private var collapsedGroups: Set<String> = []
     @AppStorage("proteinMassDisplayUnit") private var massUnit: ProteinMassUnit = .automatic
     @AppStorage("proteinConcentrationDisplayUnit") private var concentrationUnit: ProteinConcentrationUnit = .milligramsPerMilliliter
@@ -176,7 +175,7 @@ struct SampleLibraryView: View {
                         Button("Details & history…") { sheet = .details(a) }
                         groupMenu(a)
                         Divider()
-                        Button("Add thaw…") { thawSample = a }.disabled(a.archived || a.countedThaws == Int.max)
+                        Button("Add thaw…") { app.valueEdit = SampleValueEdit(sample: a, action: .thaw) }.disabled(a.archived || a.countedThaws == Int.max)
                         Button("Correct thaw count (−1)") { changeCount(a, kind: .thawCountDecrease) }.disabled(a.archived || a.countedThaws == 0)
                         Button("Mark refrozen") { recordState(a) }
                             .disabled(a.archived || a.state == .frozen)
@@ -187,7 +186,7 @@ struct SampleLibraryView: View {
             }
             Divider()
             HStack {
-                Text("Taken out today excludes concentration measurements. Thaw + asks whether you used 1.5 µL.")
+                Text("Thaw + checks volume changes and concentration measurements. Taken out today shows assay use.")
                 Spacer()
                 Text("— Not recorded").foregroundStyle(.tertiary)
             }.font(.caption).foregroundStyle(.secondary).padding(.horizontal, 22).padding(.vertical, 11)
@@ -204,7 +203,6 @@ struct SampleLibraryView: View {
                 }
             }
         }
-        .modifier(ThawConfirmation(sample: $thawSample))
         .onChange(of: search) { _, query in
             if !clean(query).isEmpty { collapsedGroups.subtract(sections.map(\.id)) }
         }
@@ -324,42 +322,17 @@ private struct ThawCounter: View {
     @Environment(\.modelContext) private var context
     @EnvironmentObject var app: AppState
     let aliquot: Aliquot
-    @State private var thawSample: Aliquot?
+    var inSheet = false
     var body: some View {
         CounterButtons(value: aliquot.countedThaws, label: compactThawCount(aliquot), sampleName: "for \(aliquot.label)",
                        decreaseHelp: aliquot.nextThawCorrectionVolumeUL > 0 ? "Undo the latest thaw and restore its 1.5 µL measurement." : "Correct the thaw count by one. This entry has no measurement volume to restore.",
-                       increaseHelp: "Add a thaw, then choose whether you used 1.5 µL to measure concentration.",
-                       decrease: { change(.thawCountDecrease) }, increase: { thawSample = aliquot })
+                       increaseHelp: "Add a thaw, update the volume after transferring, and record any 1.5 µL measurement.",
+                       decrease: { change(.thawCountDecrease) }, increase: { app.valueEdit = SampleValueEdit(sample: aliquot, action: .thaw, inSheet: inSheet) })
             .disabled(aliquot.archived)
-            .modifier(ThawConfirmation(sample: $thawSample))
     }
     private func change(_ kind: EventKind) {
         do { try Inventory.record(kind, for: aliquot, in: context) }
         catch { app.error = error.localizedDescription }
-    }
-}
-
-private struct ThawConfirmation: ViewModifier {
-    @Binding var sample: Aliquot?
-    @Environment(\.modelContext) private var context
-    @EnvironmentObject var app: AppState
-
-    func body(content: Content) -> some View {
-        content.alert("Used 1.5 µL to measure concentration?", isPresented: Binding(
-            get: { sample != nil }, set: { if !$0 { sample = nil } }), presenting: sample) { sample in
-                Button("Yes") { record(sample, measured: true) }
-                Button("No") { record(sample, measured: false) }
-                Button("Cancel", role: .cancel) { }
-            } message: { sample in
-                Text("\(sample.label) · Adds one thaw. Yes also subtracts 1.5 µL from the remaining volume.")
-            }
-    }
-
-    private func record(_ sample: Aliquot, measured: Bool) {
-        do {
-            try Inventory.record(measured ? .thawWithMeasurement : .thawCountIncrease, for: sample,
-                                 notes: measured ? "Used 1.5 µL for concentration measurement." : "No concentration measurement.", in: context)
-        } catch { app.error = error.localizedDescription }
     }
 }
 
@@ -391,8 +364,8 @@ struct SampleDetailsView: View {
                         detail("Concentration", aliquot.currentConcentrationMgML.map { "\(number($0)) \(concentrationUnit.rawValue)" } ?? "Not recorded")
                         VStack(alignment: .leading, spacing: 6) {
                             Text("Thaws").font(.caption).foregroundStyle(.secondary)
-                            ThawCounter(aliquot: aliquot)
-                            Text("+ asks about measurement").font(.caption2).foregroundStyle(.secondary)
+                            ThawCounter(aliquot: aliquot, inSheet: true)
+                            Text("+ checks volume and measurement").font(.caption2).foregroundStyle(.secondary)
                         }.frame(maxWidth: .infinity, alignment: .leading)
                     }
                     DisclosureGroup("History (\(aliquot.events.count))", isExpanded: $showHistory) {
@@ -432,6 +405,7 @@ struct SampleDetailsView: View {
                 }.padding(24)
             }
         }.frame(width: 650, height: 550)
+            .modifier(SampleEditorOverlay(inSheet: true))
             .sheet(isPresented: $editBatch) { if let batch = aliquot.batch { BatchForm(editing: batch) } }
     }
     private func detail(_ title: String, _ value: String) -> some View {

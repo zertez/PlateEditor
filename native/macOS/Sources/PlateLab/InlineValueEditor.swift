@@ -5,10 +5,11 @@ struct SampleValueEdit: Identifiable {
     let id = UUID()
     let sample: Aliquot
     let action: SampleEditAction
+    var inSheet = false
 }
 
 enum SampleEditAction: Equatable {
-    case value(SampleValueField), withdrawal
+    case value(SampleValueField), withdrawal, thaw
     var field: SampleValueField {
         if case .value(let field) = self { return field }
         return .volume
