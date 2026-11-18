@@ -50,7 +50,7 @@
     catch(e){tell(e.message,true);return false;}
   }
   function navigate(id){library.active=id;layer=0;selection.clear();anchor=null;mode=null;editIndex=null;resetForm();persist();render();}
-  function totalLabel(a){const t=M.recipeTotal(a?.SetupRecipe);return t.total===null?'Recipe not entered':`${fmt(t.total)} µL${t.complete?'':' entered · incomplete'}`;}
+  function totalLabel(a){const t=M.recipeTotal(a?.SetupRecipe);return t.total===null?'—':`${fmt(t.total)} µL${t.complete?'':' entered · incomplete'}`;}
   function render(){
     const p=project();if(!p)return;
     $('project-title').value=p.title;$('project-notes').value=p.notes||'';
@@ -63,7 +63,7 @@
     $('conditions').innerHTML=p.layout[1].length?p.layout[1].map((a,i)=>{
       const n=a.Tags.reduce((s,t)=>s+t.Wells.length,0);
       const recipe=a.SetupRecipe||[];
-      const detail=recipe.length?recipe.map(r=>`${r.name}${r.concentration?' ('+r.concentration+')':''}: ${r.volume===null?'volume not entered':fmt(r.volume)+' µL'}`).join(' · '):'Add reagents and volumes to describe everything in each well';
+      const detail = recipe.map(describeReagent).join(' · ') || 'No ingredients recorded';
       return `<button class="condition-row ${editIndex===i?'active':''}" data-condition="${i}" style="--well-color:${color(a.Color)}"><span class="condition-swatch">${i+1}</span><span class="condition-label">${esc(a.Name)}<small>${esc(detail)}</small></span><span class="condition-count">${n} wells<br>${esc(totalLabel(a))}</span></button>`;
     }).join(''):'<div class="empty-state">Start with a condition and its ingredients.<br>Then place it in the wells you want.</div>';
     $('undo').disabled=!history().undo.length;$('redo').disabled=!history().redo.length;
@@ -81,7 +81,7 @@
     document.body.style.setProperty('--well-font',display.font+'px');
     const wellButton=c=>{
       const a=c.area,rec=a?.SetupRecipe||[];
-      const title=`${c.name}: ${a?a.Name:'Unassigned'}${c.value!==null?' · '+c.value+' '+c.unit:''}${rec.length?'\n'+rec.map(r=>`${r.name}: ${r.volume===null?'not entered':r.volume+' µL'}${r.concentration?' ('+r.concentration+')':''}`).join('\n'):''}${a?.SetupNotes?'\n'+a.SetupNotes:''}${c.locked?' · Used / locked':''}`;
+      const title=`${c.name}: ${a?a.Name:'Unassigned'}${c.value!==null?' · '+c.value+' '+c.unit:''}${rec.length?'\n'+rec.map(describeReagent).join('\n'):''}${a?.SetupNotes?'\n'+a.SetupNotes:''}${c.locked?' · Used / locked':''}`;
       return `<button class="well ${a?'occupied':'empty'} ${c.locked?'locked':''}" data-well="${c.index}" aria-label="${esc(title)}" aria-pressed="${selection.has(c.index)}" title="" style="--well-color:${color(a?.Color)}">${V.wellContent(c,display)}</button>`;
     };
     let html='<span class="axis-corner"></span>';
@@ -133,28 +133,84 @@
     $('mode-hint').textContent=mode?'Hover to preview · click a starting well · Esc to cancel':'Hover for full contents · click to select';
     $('place-mode').textContent=mode==='replicates'?'Cancel placement':'Place replicates →';
     const i=selection.size?[...selection].at(-1):null;
-    if(i===null){$('well-details').innerHTML='<p class="eyebrow">WELL CONTENTS</p><h2>Select a well</h2><p class="muted">See every reagent and its volume here.</p>';return;}
+    if(i===null){$('well-details').innerHTML='<p class="eyebrow">WELL CONTENTS</p><h2>Select a well</h2><p class="muted">Select a well to inspect its contents.</p>';return;}
     const c=M.cells(p,layer)[i],a=c.area,rec=a?.SetupRecipe||[];
-    $('well-details').innerHTML=`<p class="eyebrow">WELL CONTENTS${selection.size>1?' · LAST SELECTED':''}</p><h2>${c.name}${c.locked?' <small>Used / locked</small>':''}</h2><p class="well-full-name">${esc(a?.Name||'Unassigned well')}</p>${c.value===null?'':`<p class="muted">Tagged concentration: ${esc(fmt(c.value)+' '+c.unit)}</p>`}${rec.length?`<table class="contents-table"><thead><tr><th>Reagent</th><th>Volume</th></tr></thead><tbody>${rec.map(r=>`<tr><td>${esc(r.name)}${r.concentration?`<small>${esc(r.concentration)}</small>`:''}</td><td>${r.volume===null?'Not entered':fmt(r.volume)+' µL'}</td></tr>`).join('')}</tbody></table><div class="recipe-total"><span>${M.recipeTotal(rec).complete?'Total per well':'Total entered (incomplete)'}</span><strong>${esc(totalLabel(a))}</strong></div>`:'<p class="muted" style="margin-top:12px">No ingredient volumes recorded yet.</p>'}${a?.SetupTargetVolume!=null?`<p class="muted">Target: ${fmt(a.SetupTargetVolume)} µL</p>`:''}${a?.SetupNotes?`<p class="well-notes muted">${esc(a.SetupNotes)}</p>`:''}${a?`<button class="full" data-edit-well="${c.areaIndex}">Edit recipe for selected wells</button>`:''}`;
+    $('well-details').innerHTML=`<p class="eyebrow">WELL CONTENTS${selection.size>1?' · LAST SELECTED':''}</p><h2>${c.name}${c.locked?' <small>Used / locked</small>':''}</h2><p class="well-full-name">${esc(a?.Name||'Unassigned well')}</p>${c.value===null?'':`<p class="muted">Tagged concentration: ${esc(fmt(c.value)+' '+c.unit)}</p>`}${wellRecipeDetails(rec)}${a?.SetupTargetVolume!=null?`<p class="muted">Target: ${fmt(a.SetupTargetVolume)} µL</p>`:''}${a?.SetupNotes?`<p class="well-notes muted">${esc(a.SetupNotes)}</p>`:''}${a?`<button class="full" data-edit-well="${c.areaIndex}">Edit recipe for selected wells</button>`:''}`;
   }
-  function addReagent(r={name:'',volume:null,concentration:''}){
-    const row=document.createElement('div');row.className='reagent';row.innerHTML=`<input class="reagent-name" aria-label="Reagent name" placeholder="Reagent name" value="${esc(r.name)}"><input class="reagent-volume" aria-label="Reagent volume in µL" type="number" min="0" step="any" placeholder="µL" value="${r.volume??''}"><input class="reagent-concentration" aria-label="Reagent concentration or note" placeholder="Concentration / note (optional)" value="${esc(r.concentration)}"><button type="button" aria-label="Remove reagent">×</button>`;row.querySelector('button').onclick=()=>{row.remove();updateTotal();stashDraft();};$('recipe-rows').append(row);updateTotal();
+  function describeReagent(row) {
+    return [row.name, ...V.reagentValues(row)].join(' · ');
   }
-  function readRecipe(){return [...document.querySelectorAll('.reagent')].map(row=>({name:row.querySelector('.reagent-name').value.trim(),volume:row.querySelector('.reagent-volume').value===''?null:Number(row.querySelector('.reagent-volume').value),concentration:row.querySelector('.reagent-concentration').value.trim()})).filter(r=>r.name||r.volume!==null||r.concentration);}
-  function updateTotal(){const rec=readRecipe(),t=M.recipeTotal(rec);$('recipe-total').textContent=t.total===null?'—':`${fmt(t.total)} µL${t.complete?'':' (incomplete)'}`;const target=$('target-volume').value;$('volume-check').textContent=target!==''&&t.total!==null?`${fmt(Math.abs(Number(target)-t.total))} µL ${t.total>Number(target)?'over target':'remaining to target'}${!t.complete?' · some volumes are blank':''}`:'';}
-  function draft(){return {editIndex,Name:$('condition-name').value,Color:$('condition-color').value,Type:$('condition-type').value,SetupNotes:$('condition-notes').value,SetupRecipe:readRecipe(),SetupTargetVolume:$('target-volume').value,tag:$('tag-value').value,unit:$('tag-unit').value};}
+  function wellRecipeDetails(recipe) {
+    if (!recipe.length) return '<p class="muted">No ingredients recorded.</p>';
+    const rows = recipe.map(row => `<tr><td>${esc(row.name)}</td><td>${V.reagentValues(row).map(esc).join('<br>')}</td></tr>`);
+    const total = M.recipeTotal(recipe);
+    const summary = total.total == null ? '' : `<div class="recipe-total"><span>${total.complete ? 'Total volume' : 'Volume entered'}</span><strong>${fmt(total.total)} µL</strong></div>`;
+    return `<table class="contents-table ingredient-details"><thead><tr><th>Ingredient</th><th>Per well</th></tr></thead><tbody>${rows.join('')}</tbody></table>${summary}`;
+  }
+  function addReagent(saved = {}) {
+    const row = $('reagent-template').content.firstElementChild.cloneNode(true);
+    const type = row.querySelector('.reagent-type');
+    const name = row.querySelector('.reagent-name');
+    const amount = row.querySelector('.reagent-amount');
+    const unit = row.querySelector('.reagent-unit');
+    const volume = row.querySelector('.reagent-volume');
+    const note = row.querySelector('.reagent-concentration');
+    name.value = saved.name ?? '';
+    volume.value = saved.volume ?? '';
+    note.value = saved.concentration ?? '';
+    row.querySelector('details').open = volume.value !== '' || note.value !== '';
+    type.value = saved.reagentType === 'protein' ? 'protein' : 'reagent';
+    const entries = new Map([[type.value, {value: saved.amount ?? '', unit: saved.amountUnit}]]);
+    let activeType;
+    function selectType() {
+      if (activeType === type.value) return;
+      if (activeType) entries.set(activeType, {value: amount.value, unit: unit.value});
+      activeType = type.value;
+      const protein = activeType === 'protein';
+      const label = protein ? 'Protein mass per well' : 'Final concentration';
+      row.querySelector('.measure-label').textContent = label;
+      name.placeholder = protein ? 'Protein name' : 'Reagent name';
+      unit.setAttribute('aria-label', protein ? 'Mass unit' : 'Concentration unit');
+      const units = M.reagentUnits[activeType];
+      unit.replaceChildren(...units.map(text => new Option(text, text)));
+      const entry = entries.get(activeType);
+      unit.value = units.includes(entry?.unit) ? entry.unit : units[0];
+      amount.value = entry?.value ?? '';
+    }
+    selectType();
+    type.oninput = selectType;
+    type.onchange = () => { selectType(); stashDraft(); };
+    row.querySelector('.remove-reagent').onclick = () => { row.remove(); updateTotal(); stashDraft(); };
+    $('recipe-rows').append(row);
+    updateTotal();
+  }
+  function readRecipe(forDraft = false) {
+    const rows = [...$('recipe-rows').children].map(row => {
+      const value = selector => row.querySelector(selector).value;
+      const numeric = selector => value(selector) === '' ? null : Number(value(selector));
+      return {
+        name: value('.reagent-name').trim(), reagentType: value('.reagent-type'),
+        amount: numeric('.reagent-amount'), amountUnit: value('.reagent-unit'),
+        volume: numeric('.reagent-volume'), concentration: value('.reagent-concentration').trim()
+      };
+    });
+    return forDraft ? rows : rows.filter(r => r.name || r.amount !== null || r.volume !== null || r.concentration);
+  }
+  function updateTotal(){const rec=readRecipe(),t=M.recipeTotal(rec);$('recipe-total').parentElement.hidden=t.total===null;$('recipe-total').textContent=t.total===null?'—':`${fmt(t.total)} µL${t.complete?'':' (incomplete)'}`;const target=$('target-volume').value;$('volume-check').textContent=target!==''&&t.total!==null?`${fmt(Math.abs(Number(target)-t.total))} µL ${t.total>Number(target)?'over target':'remaining to target'}${!t.complete?' · some volumes are blank':''}`:'';}
+  function draft(){return {editIndex,Name:$('condition-name').value,Color:$('condition-color').value,Type:$('condition-type').value,SetupNotes:$('condition-notes').value,SetupRecipe:readRecipe(true),SetupTargetVolume:$('target-volume').value,tag:$('tag-value').value,unit:$('tag-unit').value};}
   function stashDraft(){if(project()){project().draft=draft();persist();}}
   function resetForm(){editIndex=null;mode=null;$('condition-name').value='';$('condition-notes').value='';$('condition-color').value=M.colors[(project()?.layout[1].length||0)%M.colors.length];$('condition-type').value='Sample';$('recipe-rows').innerHTML='';$('target-volume').value='';$('tag-value').value='';$('tag-unit').value='µM';$('composer-heading').textContent='New condition';$('save-condition').textContent='Save condition';addReagent();}
   function editCondition(i){
     if(display.wide)updateDisplay({...display,wide:false});
     const a=project().layout[1][i];if(a.Type==='Range'){tell('This condition is an indexed range. Its data is preserved; use the original editor to edit ranges.',true);return;}
-    editIndex=i;mode=null;$('condition-name').value=a.Name;$('condition-notes').value=a.SetupNotes||'';$('condition-color').value=color(a.Color);$('condition-type').value=['Sample','Positive Control','Negative Control'].includes(a.Type)?a.Type:'Sample';$('recipe-rows').innerHTML='';(a.SetupRecipe?.length?a.SetupRecipe:[{}]).forEach(r=>addReagent({name:r.name||'',volume:r.volume??null,concentration:r.concentration||''}));$('target-volume').value=a.SetupTargetVolume??'';
+    editIndex=i;mode=null;$('condition-name').value=a.Name;$('condition-notes').value=a.SetupNotes||'';$('condition-color').value=color(a.Color);$('condition-type').value=['Sample','Positive Control','Negative Control'].includes(a.Type)?a.Type:'Sample';$('recipe-rows').innerHTML='';(a.SetupRecipe?.length?a.SetupRecipe:[{}]).forEach(addReagent);$('target-volume').value=a.SetupTargetVolume??'';
     const tagged=M.cells(project(),layer).filter(c=>c.areaIndex===i), first=tagged[0];const same=tagged.every(c=>c.value===first?.value && c.unit===first?.unit);
     $('tag-value').value=same?(first?.value??''):'';$('tag-unit').value=same?(first?.unit||'µM'):'µM';
     $('composer-heading').textContent=`Edit condition ${i+1}`;$('save-condition').textContent='Update all wells using this condition';updateTotal();stashDraft();render();
   }
   function spec(){
     const s={Name:$('condition-name').value.trim(),Color:$('condition-color').value,Type:$('condition-type').value,SetupNotes:$('condition-notes').value,SetupRecipe:readRecipe(),SetupTargetVolume:$('target-volume').value===''?null:Number($('target-volume').value)};
+    if ($('recipe-rows').querySelector('input:invalid')) throw Error('Enter non-negative numbers for reagent measurements.');
     M.validateRecipe(s.SetupRecipe);if(!s.Name)throw Error('Give the condition a name first.');return s;
   }
   function tagValue(){const v=$('tag-value').value;return v===''?null:Number(v);}

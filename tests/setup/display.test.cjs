@@ -69,3 +69,20 @@ test('one-page export retains all chosen well details and coordinates independen
  assert.ok(html.includes('&lt;script&gt;'));assert.ok(!html.includes('<script>'));assert.equal(JSON.stringify(p),before);
  assert.equal((V.printWhole(p,0,{crop:true}).match(/class="print-export-well"/g)||[]).length,9);
 });
+
+test('ingredient measurements appear on wells and both print layouts without inventing a volume', () => {
+  const p = M.newProject();
+  const common = {volume: null, concentration: ''};
+  const idx = M.condition(p, {Name: 'Test', SetupRecipe: [
+    {...common, name: 'Enzyme', reagentType: 'protein', amount: 2.5, amountUnit: 'µg'},
+    {...common, name: 'Buffer', reagentType: 'reagent', amount: 50, amountUnit: 'mM'}
+  ]});
+  M.assign(p, [0], idx);
+  const cell = M.cells(p)[0];
+  for (const html of [V.wellContent(cell, {mode: 'contents'}), V.printSections(p, 0, {}), V.printWhole(p, 0, {})]) {
+    assert.match(html, /2\.500 µg/);
+    assert.match(html, /50\.000 mM/);
+    assert.doesNotMatch(html, /0\.000 µL|Some volumes are not recorded/);
+  }
+  assert.doesNotMatch(V.wellContent(cell, {mode: 'details', fields: {concentrations: false}}), /2\.500 µg/);
+});

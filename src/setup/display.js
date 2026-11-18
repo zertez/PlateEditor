@@ -7,7 +7,7 @@
     type: 'Condition type',
     tagged: 'Tagged concentration',
     ingredients: 'Reagent names',
-    concentrations: 'Reagent concentrations / notes',
+    concentrations: 'Concentrations, protein masses & notes',
     volumes: 'Reagent volumes',
     totals: 'Total and target volume',
     notes: 'Condition notes'
@@ -50,6 +50,21 @@
     if(input?.version!==defaults.version){next.mode='overview';next.wide=false;next.crop=false;}
     return next;
   }
+  function amountLabel(row) {
+    if (row.amount == null) return '';
+    const value = row.amount > 0 && row.amount < 0.001 ? String(row.amount) : number(row.amount);
+    return value + ' ' + row.amountUnit;
+  }
+  function reagentValues(row) {
+    return [amountLabel(row), row.volume == null ? '' : number(row.volume) + ' µL', row.concentration].filter(Boolean);
+  }
+  function reagentContent(row, fields, hasVolumes) {
+    const measurement = fields.concentrations ? amountLabel(row) : '';
+    const volume = fields.volumes && hasVolumes ? (row.volume == null ? 'Not recorded' : number(row.volume) + ' µL') : '';
+    const note = fields.concentrations ? row.concentration : '';
+    const primary = measurement || volume;
+    return `<span class="reagent-entry"><span class="reagent-top"><span>${escape(row.name)}</span>${primary ? `<strong>${escape(primary)}</strong>` : ''}</span>${measurement && volume ? `<span class="reagent-note">Volume: ${escape(volume)}</span>` : ''}${note ? `<span class="reagent-note">${escape(note)}</span>` : ''}</span>`;
+  }
   function wellContent(c, options) {
     const o=normalize(options),f=o.fields,a=c.area,recipe=a?.SetupRecipe||[];
     if(o.mode==='overview') return `<span class="well-code">${a?c.areaIndex+1:escape(c.name)}${c.locked?' · used':''}</span>${c.value!==null?`<span class="well-dose">${escape(number(c.value)+' '+c.unit)}</span>`:''}`;
@@ -60,7 +75,8 @@
     if(f.tagged && c.value!==null) output.push(`<span class="well-field"><span class="field-label">Tagged concentration</span><strong>${escape(number(c.value)+' '+c.unit)}</strong></span>`);
     // Names remain visible with volumes or concentrations to keep those values identifiable.
     if(a && (f.ingredients||f.volumes||f.concentrations)) {
-      output.push(`<span class="well-ingredients"><span class="field-label">Contents per well</span>${recipe.length?recipe.map(r=>`<span class="reagent-entry"><span class="reagent-top"><span>${escape(r.name)}</span>${f.volumes?`<strong>${r.volume===null?'Not recorded':number(r.volume)+' µL'}</strong>`:''}</span>${f.concentrations&&r.concentration?`<span class="reagent-note">${escape(r.concentration)}</span>`:''}</span>`).join(''):'<span class="well-placeholder">Recipe not recorded</span>'}</span>`);
+      const hasVolumes = recipe.some(row => row.volume != null);
+      output.push(`<span class="well-ingredients"><span class="field-label">Contents per well</span>${recipe.length ? recipe.map(row => reagentContent(row, f, hasVolumes)).join('') : '<span class="well-placeholder">Recipe not recorded</span>'}</span>`);
     }
     if(a && f.totals) {
       const t=M.recipeTotal(recipe);
@@ -94,6 +110,6 @@
     }
     return `<header class="print-whole-title"><h2>${escape(project.title)}</h2><p>Layer ${layer+1} · ${M.wellName(b.firstRow*plate.Cols+b.firstCol,plate.Cols)}–${M.wellName(b.lastRow*plate.Cols+b.lastCol,plate.Cols)} · Volumes in µL; unrecorded volumes remain unknown.</p></header><div id="print-whole-frame"><div id="print-whole-grid" style="--cols:${b.lastCol-b.firstCol+1}">${html}</div></div>`;
   }
-  const api={fields,defaults,normalize,preset,bounds,restore,wellContent,printSections,printWhole};
+  const api={amountLabel,reagentValues,fields,defaults,normalize,preset,bounds,restore,wellContent,printSections,printWhole};
   if(typeof module!=='undefined' && module.exports)module.exports=api;else root.PlateSetupDisplay=api;
 })(globalThis);

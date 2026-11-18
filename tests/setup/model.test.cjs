@@ -118,3 +118,32 @@ if(fs.existsSync(privateLibrary)){
    assert.equal(actual,expected);
  });
 }
+
+test('changing only an ingredient unit creates a variant for the selected well', () => {
+  const project = M.newProject();
+  const row = {name: 'Substrate', reagentType: 'reagent', amount: 25, amountUnit: 'µM', volume: null, concentration: ''};
+  const recipe = {...spec('Assay'), SetupRecipe: [row]};
+  const original = M.condition(project, recipe);
+  M.assign(project, [0, 1], original);
+  const edited = {...recipe, SetupRecipe: [{...row, amountUnit: 'nM'}]};
+  M.applyCondition(project, [1], edited, original);
+  const [first, second] = M.cells(project);
+  assert.deepEqual(first.area.SetupRecipe, [row]);
+  assert.deepEqual(second.area.SetupRecipe, edited.SetupRecipe);
+  assert.deepEqual(M.recipeTotal(edited.SetupRecipe), {total: null, complete: false});
+});
+
+test('protein mass and molarity retain their units and zeros in backups and CSV', () => {
+  const project = M.newProject();
+  const protein = {name: 'Protein', reagentType: 'protein', amount: 0, amountUnit: 'µg', volume: 0, concentration: 'lot A'};
+  const reagent = {...protein, name: 'Buffer', reagentType: 'reagent', amount: 12, amountUnit: 'mM', volume: null};
+  const index = M.condition(project, {...spec('Recipe'), SetupRecipe: [protein, reagent]});
+  M.assign(project, [0], index);
+  const copy = M.importProject({format: 'plate-setup', version: 1, project});
+  assert.deepEqual(copy.layout, project.layout);
+  const csv = M.csv(copy);
+  assert.match(csv, /"protein","","","0","µg"/);
+  assert.match(csv, /"reagent","12","mM","",""/);
+  assert.throws(() => M.validateRecipe([{...protein, amountUnit: 'mM'}]));
+  assert.throws(() => M.validateRecipe([{...reagent, amount: -1}]));
+});

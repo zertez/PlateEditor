@@ -23,9 +23,22 @@
     });
     return data;
   }
+  const reagentUnits = {
+    reagent: ['µM', 'mM', 'nM', 'pM', 'M'],
+    protein: ['µg', 'mg', 'ng', 'pg']
+  };
   function validateRecipe(recipe) {
     if (!Array.isArray(recipe)) throw Error('Invalid recipe.');
-    recipe.forEach(r => { if (!r || typeof r.name !== 'string' || !r.name.trim() || (r.volume !== null && (typeof r.volume !== 'number' || !Number.isFinite(r.volume) || r.volume < 0)) || typeof r.concentration !== 'string') throw Error('Each reagent needs a name and a non-negative volume, or a blank volume.'); });
+    for (const row of recipe) {
+      if (!row || typeof row.name !== 'string' || !row.name.trim()) throw Error('Give each reagent a name.');
+      if (row.volume !== null && (!Number.isFinite(row.volume) || row.volume < 0)) throw Error('Enter a non-negative volume or leave it blank.');
+      if (typeof row.concentration !== 'string') throw Error('Invalid reagent note.');
+      if (row.reagentType == null && row.amount == null && row.amountUnit == null) continue;
+      if (!Object.hasOwn(reagentUnits, row.reagentType) || !reagentUnits[row.reagentType].includes(row.amountUnit))
+        throw Error('Choose a unit for this reagent type.');
+      if (row.amount !== null && (!Number.isFinite(row.amount) || row.amount < 0))
+        throw Error('Enter a non-negative concentration or protein mass.');
+    }
     return recipe;
   }
   function newProject(title = 'Untitled plate', rows = 8, cols = 12) {
@@ -51,7 +64,7 @@
     return out;
   }
   function recipeTotal(recipe) {
-    if (!recipe?.length) return {total:null,complete:false};
+    if (!recipe?.some(r => r.volume != null)) return {total:null,complete:false};
     return {total:Math.round(recipe.reduce((s,r)=>s+(r.volume ?? 0),0)*1e6)/1e6, complete:recipe.every(r=>r.volume !== null)};
   }
   function rectangle(start,end,cols) {
@@ -101,7 +114,10 @@
     unique.forEach(Index=>{const w={Index,RangeIndex:1}; if(value!==null){w.Value=value;w.Unit=unit;project.layout[0].Layers[layer].push(clone(w));}tag.Wells.push(w);});
   }
   function conditionContents(a) {
-    const recipe=(a.SetupRecipe||[]).map(r=>({name:r.name,volume:r.volume,concentration:r.concentration}));
+    const recipe = (a.SetupRecipe || []).map(r => ({
+      name: r.name, volume: r.volume, concentration: r.concentration,
+      reagentType: r.reagentType ?? 'reagent', amount: r.amount ?? null, amountUnit: r.amountUnit ?? reagentUnits.reagent[0]
+    }));
     return {Name:a.Name.trim(),Color:a.Color,Type:a.Type,SetupNotes:a.SetupNotes||'',SetupRecipe:recipe,SetupTargetVolume:a.SetupTargetVolume??null};
   }
   // Applying a draft is scoped to these wells. Only the explicit condition-wide
@@ -136,15 +152,17 @@
     project.layout[1].forEach(a=>a.Tags.forEach(t=>{if(t.Layer===layer)t.Wells=t.Wells.filter(w=>!indices.includes(w.Index));}));
   }
   function csv(project) {
-    const rows=[['Layer','Well','Condition','Type','Tagged concentration','Unit','Reagent','Volume (µL)','Concentration / note','Total entered (µL)','Recipe volumes complete','Target volume (µL)','Used / locked']];
+    const rows=[['Layer','Well','Condition','Type','Tagged concentration','Unit','Reagent','Volume (µL)','Concentration / note','Total entered (µL)','Recipe volumes complete','Target volume (µL)','Used / locked','Reagent type','Final concentration','Concentration unit','Protein mass per well','Mass unit']];
     project.layout[0].Layers.forEach((_,layer)=>cells(project,layer).forEach(c=>{
       if(!c.area && c.value===null && !c.locked)return;
       const recipe=c.area?.SetupRecipe||[], summary=recipeTotal(recipe);
-      (recipe.length?recipe:[{}]).forEach(r=>rows.push([layer+1,c.name,c.area?.Name||'',c.area?.Type||'',c.value??'',c.unit,r.name||'',r.volume??'',r.concentration||'',summary.total??'',summary.complete?'Yes':'No',c.area?.SetupTargetVolume??'',c.locked?'Yes':'No']));
+      (recipe.length?recipe:[{}]).forEach(r=>rows.push([layer+1,c.name,c.area?.Name||'',c.area?.Type||'',c.value??'',c.unit,r.name||'',r.volume??'',r.concentration||'',summary.total??'',summary.complete?'Yes':'No',c.area?.SetupTargetVolume??'',c.locked?'Yes':'No',
+        r.reagentType || '', r.reagentType==='reagent' ? r.amount ?? '' : '', r.reagentType==='reagent' && r.amount!=null ? r.amountUnit : '',
+        r.reagentType==='protein' ? r.amount ?? '' : '', r.reagentType==='protein' && r.amount!=null ? r.amountUnit : '']));
     }));
     // Prefix text that spreadsheet software could interpret as a formula.
     return '\uFEFF'+rows.map(row=>row.map(v=>'"'+(typeof v==='string'&&/^[\s]*[=+@-]/.test(v)?"'"+v:String(v)).replaceAll('"','""')+'"').join(',')).join('\r\n');
   }
-  const api={clone,colors,id,rowName,wellName,validateLayout,validateRecipe,newProject,importProject,cells,recipeTotal,rectangle,block,ensureEditable,condition,assign,applyCondition,clear,csv};
+  const api={clone,colors,reagentUnits,id,rowName,wellName,validateLayout,validateRecipe,newProject,importProject,cells,recipeTotal,rectangle,block,ensureEditable,condition,assign,applyCondition,clear,csv};
   if(typeof module!=='undefined' && module.exports)module.exports=api; else root.PlateSetup=api;
 })(globalThis);
