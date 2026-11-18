@@ -25,172 +25,110 @@ struct SampleLibraryView: View {
     private var sections: [SampleGroupSection] { SampleGroups.sections(in: matching) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 16) {
-                    Text("Protein samples").font(.title2.weight(.semibold))
-                    Text("\(matching.count)").foregroundStyle(.secondary)
-                    Spacer()
-                    HStack(spacing: 7) {
-                        Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                        TextField("Find a sample", text: $search).textFieldStyle(.plain)
-                    }
-                    .padding(.horizontal, 10).padding(.vertical, 7)
-                    .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 7))
-                    .frame(width: 200)
-                    Button { sheet = .add(nil) } label: { Label("Add sample", systemImage: "plus") }
-                        .buttonStyle(.borderedProminent)
-                    Menu {
-                        Toggle("Show archived samples", isOn: $showArchived)
-                        Button("New group from existing samples…") { sheet = .group(nil, []) }.disabled(aliquots.isEmpty)
-                        Divider()
-                        Button("Export samples…", action: app.exportCSV)
-                        Button("Save backup…", action: app.exportSamples)
-                        Button("Import backup…", action: app.importSamples)
-                    } label: { Image(systemName: "ellipsis") }
-                    .menuStyle(.borderlessButton).fixedSize().help("Library options")
-                }
-                HStack(spacing: 24) {
-                    HStack(spacing: 6) {
-                        Text("Concentration").font(.callout).foregroundStyle(.secondary)
-                        Picker("Concentration units", selection: $concentrationUnit) {
-                            ForEach(ProteinConcentrationUnit.allCases) { Text($0.rawValue).tag($0) }
-                        }.labelsHidden().pickerStyle(.segmented).frame(width: 158).controlSize(.small)
-                            .help("1 mg/mL = 1 µg/µL. The number stays the same; your preferred unit label is remembered.")
-                    }
-                    HStack(spacing: 6) {
-                        Text("Protein left").font(.callout).foregroundStyle(.secondary)
-                        Picker("Protein amount units", selection: $massUnit) {
-                            ForEach(ProteinMassUnit.allCases) { Text($0.rawValue).tag($0) }
-                        }.labelsHidden().pickerStyle(.segmented).frame(width: 132).controlSize(.small)
-                            .help("Choose µg or mg for every sample, or Auto. 1 mg = 1,000 µg.")
-                    }
-                    Spacer()
-                }
-            }.padding(.horizontal, 22).padding(.vertical, 18)
-            Divider()
-            if aliquots.isEmpty {
-                ContentUnavailableView {
-                    Label("Your protein samples", systemImage: "testtube.2")
-                } description: {
-                    Text("Add a sample to track its volume and thaws.")
-                } actions: {
-                    Button("Add sample") { sheet = .add(nil) }.buttonStyle(.borderedProminent)
-                }.frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if matching.isEmpty {
-                ContentUnavailableView.search(text: search).frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                Table(of: Aliquot.self, selection: $selected) {
-                    TableColumn("Sample") { a in
-                        Button { sheet = .details(a) } label: {
+        GeometryReader { size in
+            VStack(alignment: .leading, spacing: 0) {
+                header(width: size.size.width)
+                Divider()
+                if aliquots.isEmpty {
+                    ContentUnavailableView {
+                        Label("Your protein samples", systemImage: "testtube.2")
+                    } description: {
+                        Text("Add a sample to track its volume and thaws.")
+                    } actions: {
+                        Button("Add sample") { sheet = .add(nil) }.buttonStyle(.borderedProminent)
+                    }.frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if matching.isEmpty {
+                    ContentUnavailableView.search(text: search).frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if size.size.width < 1030 {
+                    compactSamples(width: size.size.width)
+                } else {
+                    Table(of: Aliquot.self, selection: $selected) {
+                        TableColumn("Sample") { a in
+                            Button { sheet = .details(a) } label: {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(a.label).fontWeight(.semibold)
+                                    if let form = a.batch?.variant, !form.isEmpty {
+                                        Text(form).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                    }
+                                }.padding(.vertical, 9).frame(maxWidth: .infinity, alignment: .leading)
+                            }.buttonStyle(.plain).help("View \(a.label) details and history")
+                        }.width(min: 120, ideal: 155, max: 270)
+                        TableColumn("Left (µL)") { a in
+                            EditableSampleValue(sample: a, field: .volume)
+                        }.width(min: 85, ideal: 95, max: 130)
+                        TableColumn("Taken out today (µL)") { a in
+                            withdrawalButton(a)
+                        }.width(min: 145, ideal: 150, max: 185)
+                        TableColumn("Conc. (\(concentrationUnit.rawValue))") { a in
+                            EditableSampleValue(sample: a, field: .concentration)
+                        }.width(min: 100, ideal: 110, max: 150)
+                        TableColumn("Protein left") { a in
+                            Text(proteinMassLabel(a.massUG, unit: massUnit)).monospacedDigit()
+                                .accessibilityLabel("Protein left for \(a.label)")
+                                .accessibilityValue(proteinMassLabel(a.massUG, unit: massUnit))
+                                .help(a.massUG == nil
+                                      ? "Enter both remaining volume and concentration to calculate the protein amount."
+                                      : "Calculated from remaining volume × concentration. Updates automatically when either value changes.")
+                        }.width(min: 105, ideal: 115, max: 150)
+                        TableColumn("Thaws") { a in
+                            ThawCounter(aliquot: a)
+                        }.width(min: 120, ideal: 130, max: 180)
+                        TableColumn("Location") { a in
                             VStack(alignment: .leading, spacing: 4) {
-                                Text(a.label).fontWeight(.semibold)
-                                if let form = a.batch?.variant, !form.isEmpty {
-                                    Text(form).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                Text(a.location.isEmpty ? "—" : a.location).lineLimit(1)
+                                if a.state != .unknown {
+                                    Text(a.state.rawValue).font(.caption).foregroundStyle(.secondary)
                                 }
-                            }.padding(.vertical, 9).frame(maxWidth: .infinity, alignment: .leading)
-                        }.buttonStyle(.plain).help("View \(a.label) details and history")
-                    }.width(min: 120, ideal: 155, max: 270)
-                    TableColumn("Left (µL)") { a in
-                        EditableSampleValue(sample: a, field: .volume)
-                    }.width(min: 85, ideal: 95, max: 130)
-                    TableColumn("Taken out today (µL)") { a in
-                        TimelineView(.periodic(from: .now, by: 60)) { clock in
-                            Button { openWithdrawal(a) } label: {
-                                HStack(spacing: 8) {
-                                    Text(number(a.takenOutUL(on: clock.date))).monospacedDigit()
-                                    Image(systemName: "plus.circle").font(.callout)
-                                }.frame(maxWidth: .infinity, alignment: .leading).frame(height: 26)
-                                    .contentShape(Rectangle())
-                            }.buttonStyle(.plain).foregroundStyle(.tint)
-                                .disabled(a.archived || (a.remainingUL ?? 0) <= 0)
-                                .accessibilityLabel("Taken out today for \(a.label). Log a withdrawal")
-                                .accessibilityValue(volumeLabel(a.takenOutUL(on: clock.date)))
-                                .help("Withdrawals logged today, such as assays. Excludes concentration measurements. Click to enter the amount removed in another withdrawal.")
-                        }
-                    }.width(min: 145, ideal: 150, max: 185)
-                    TableColumn("Conc. (\(concentrationUnit.rawValue))") { a in
-                        EditableSampleValue(sample: a, field: .concentration)
-                    }.width(min: 100, ideal: 110, max: 150)
-                    TableColumn("Protein left") { a in
-                        Text(proteinMassLabel(a.massUG, unit: massUnit)).monospacedDigit()
-                            .accessibilityLabel("Protein left for \(a.label)")
-                            .accessibilityValue(proteinMassLabel(a.massUG, unit: massUnit))
-                            .help(a.massUG == nil
-                                  ? "Enter both remaining volume and concentration to calculate the protein amount."
-                                  : "Calculated from remaining volume × concentration. Updates automatically when either value changes.")
-                    }.width(min: 105, ideal: 115, max: 150)
-                    TableColumn("Thaws") { a in
-                        ThawCounter(aliquot: a)
-                    }.width(min: 120, ideal: 130, max: 180)
-                    TableColumn("Location") { a in
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(a.location.isEmpty ? "—" : a.location).lineLimit(1)
-                            if a.state != .unknown {
-                                Text(a.state.rawValue).font(.caption).foregroundStyle(.secondary)
+                            }.help(a.location)
+                        }.width(min: 75, ideal: 110, max: 260)
+                        TableColumn("") { a in
+                            sampleMenu(a)
+                        }.width(30)
+                    } rows: {
+                        ForEach(sections) { section in
+                            Section {
+                                if !collapsedGroups.contains(section.id) {
+                                    ForEach(section.samples) { TableRow($0) }
+                                }
+                            } header: {
+                                groupHeading(section)
                             }
-                        }.help(a.location)
-                    }.width(min: 75, ideal: 110, max: 260)
-                    TableColumn("") { a in
-                        Menu {
+                        }
+                        Section { ForEach([Aliquot]()) { TableRow($0) } } header: {
+                            Menu {
+                                Button("Add sample…") { sheet = .add(nil) }
+                                Button("New enzyme group…") { sheet = .newEnzyme }
+                            } label: {
+                                Label("New enzyme or sample", systemImage: "plus.circle")
+                                    .font(.callout.weight(.medium)).padding(.vertical, 10)
+                            }.menuStyle(.borderlessButton).fixedSize().foregroundStyle(.tint)
+                        }
+                    }
+                    .tableStyle(.inset(alternatesRowBackgrounds: false))
+                    .contextMenu(forSelectionType: UUID.self) { ids in
+                        if let id = ids.first, let a = matching.first(where: { $0.id == id }) {
                             Button("Log withdrawal…") { openWithdrawal(a) }
                                 .disabled(a.archived || (a.remainingUL ?? 0) <= 0)
                             Button("Details & history…") { sheet = .details(a) }
                             groupMenu(a)
                             Divider()
+                            Button("Add thaw…") { app.valueEdit = SampleValueEdit(sample: a, action: .thaw) }.disabled(a.archived || a.countedThaws == Int.max)
+                            Button("Correct thaw count (−1)") { changeCount(a, kind: .thawCountDecrease) }.disabled(a.archived || a.countedThaws == 0)
                             Button("Mark refrozen") { recordState(a) }
                                 .disabled(a.archived || a.state == .frozen)
                             Button("Change location…") { sheet = .event(a, .moved) }.disabled(a.archived)
                             Button("Adjust volume…") { sheet = .event(a, .volumeCorrection) }.disabled(a.archived)
-                            Divider()
-                            Button(a.archived ? "Restore sample" : "Archive sample") { archive(a) }
-                        } label: { Image(systemName: "ellipsis") }
-                        .menuStyle(.borderlessButton).fixedSize().help("More actions for \(a.label)")
-                    }.width(30)
-                } rows: {
-                    ForEach(sections) { section in
-                        Section {
-                            if !collapsedGroups.contains(section.id) {
-                                ForEach(section.samples) { TableRow($0) }
-                            }
-                        } header: {
-                            groupHeading(section)
                         }
                     }
-                    Section { ForEach([Aliquot]()) { TableRow($0) } } header: {
-                        Menu {
-                            Button("Add sample…") { sheet = .add(nil) }
-                            Button("New enzyme group…") { sheet = .newEnzyme }
-                        } label: {
-                            Label("New enzyme or sample", systemImage: "plus.circle")
-                                .font(.callout.weight(.medium)).padding(.vertical, 10)
-                        }.menuStyle(.borderlessButton).fixedSize().foregroundStyle(.tint)
-                    }
                 }
-                .tableStyle(.inset(alternatesRowBackgrounds: false))
-                .contextMenu(forSelectionType: UUID.self) { ids in
-                    if let id = ids.first, let a = matching.first(where: { $0.id == id }) {
-                        Button("Log withdrawal…") { openWithdrawal(a) }
-                            .disabled(a.archived || (a.remainingUL ?? 0) <= 0)
-                        Button("Details & history…") { sheet = .details(a) }
-                        groupMenu(a)
-                        Divider()
-                        Button("Add thaw…") { app.valueEdit = SampleValueEdit(sample: a, action: .thaw) }.disabled(a.archived || a.countedThaws == Int.max)
-                        Button("Correct thaw count (−1)") { changeCount(a, kind: .thawCountDecrease) }.disabled(a.archived || a.countedThaws == 0)
-                        Button("Mark refrozen") { recordState(a) }
-                            .disabled(a.archived || a.state == .frozen)
-                        Button("Change location…") { sheet = .event(a, .moved) }.disabled(a.archived)
-                        Button("Adjust volume…") { sheet = .event(a, .volumeCorrection) }.disabled(a.archived)
-                    }
-                }
-            }
-            Divider()
-            HStack {
-                Text("Thaw + checks volume changes and concentration measurements. Taken out today shows assay use.")
-                Spacer()
-                Text("— Not recorded").foregroundStyle(.tertiary)
-            }.font(.caption).foregroundStyle(.secondary).padding(.horizontal, 22).padding(.vertical, 11)
-        }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                Divider()
+                HStack {
+                    Text("Thaw + checks volume changes and concentration measurements. Taken out today shows assay use.")
+                    Spacer()
+                    Text("— Not recorded").foregroundStyle(.tertiary)
+                }.font(.caption).foregroundStyle(.secondary).padding(.horizontal, 22).padding(.vertical, 11)
+            }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
         .sheet(item: $sheet) { destination in
             switch destination {
             case .add(let group): AddSampleForm(initialGroup: group)
@@ -208,6 +146,162 @@ struct SampleLibraryView: View {
         }
     }
 
+
+    private func header(width: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if width < 720 {
+                HStack(spacing: 12) { title; Spacer(minLength: 0); libraryActions }
+                searchField
+            } else {
+                HStack(spacing: 16) {
+                    title
+                    Spacer(minLength: 0)
+                    searchField.frame(width: 200)
+                    libraryActions
+                }
+            }
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 24) { concentrationPicker; massPicker }
+                VStack(alignment: .leading, spacing: 8) { concentrationPicker; massPicker }
+            }
+        }.padding(.horizontal, 20).padding(.vertical, 16)
+    }
+
+    private var title: some View {
+        HStack(spacing: 12) {
+            Text("Protein samples").font(.title2.weight(.semibold)).fixedSize()
+            Text("\(matching.count)").foregroundStyle(.secondary)
+        }
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 7) {
+            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+            TextField("Find a sample", text: $search).textFieldStyle(.plain)
+        }.padding(.horizontal, 10).padding(.vertical, 7)
+            .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 7))
+    }
+
+    private var libraryActions: some View {
+        HStack(spacing: 12) {
+            Button { sheet = .add(nil) } label: { Label("Add sample", systemImage: "plus") }
+                .buttonStyle(.borderedProminent).fixedSize()
+            Menu {
+                Toggle("Show archived samples", isOn: $showArchived)
+                Button("New group from existing samples…") { sheet = .group(nil, []) }.disabled(aliquots.isEmpty)
+                Divider()
+                Button("Export samples…", action: app.exportCSV)
+                Button("Save backup…", action: app.exportSamples)
+                Button("Import backup…", action: app.importSamples)
+            } label: { Image(systemName: "ellipsis") }
+                .menuStyle(.borderlessButton).fixedSize().help("Library options")
+        }
+    }
+
+    private var concentrationPicker: some View {
+        HStack(spacing: 6) {
+            Text("Concentration").font(.callout).foregroundStyle(.secondary)
+            Picker("Concentration units", selection: $concentrationUnit) {
+                ForEach(ProteinConcentrationUnit.allCases) { Text($0.rawValue).tag($0) }
+            }.labelsHidden().pickerStyle(.segmented).frame(width: 158).controlSize(.small)
+                .help("1 mg/mL = 1 µg/µL. The number stays the same; your preferred unit label is remembered.")
+        }.fixedSize()
+    }
+
+    private var massPicker: some View {
+        HStack(spacing: 6) {
+            Text("Protein left").font(.callout).foregroundStyle(.secondary)
+            Picker("Protein amount units", selection: $massUnit) {
+                ForEach(ProteinMassUnit.allCases) { Text($0.rawValue).tag($0) }
+            }.labelsHidden().pickerStyle(.segmented).frame(width: 132).controlSize(.small)
+                .help("Choose µg or mg for every sample, or Auto. 1 mg = 1,000 µg.")
+        }.fixedSize()
+    }
+
+    private func compactSamples(width: CGFloat) -> some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                ForEach(sections) { section in
+                    groupHeading(section)
+                    Divider()
+                    if !collapsedGroups.contains(section.id) {
+                        ForEach(section.samples) { sample in
+                            VStack(alignment: .leading, spacing: 14) {
+                                HStack(alignment: .top) {
+                                    Button { sheet = .details(sample) } label: {
+                                        VStack(alignment: .leading, spacing: 3) {
+                                            Text(sample.label).font(.headline)
+                                            if let variant = sample.batch?.variant, !variant.isEmpty {
+                                                Text(variant).font(.caption).foregroundStyle(.secondary)
+                                            }
+                                        }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+                                    }.buttonStyle(.plain).help("View \(sample.label) details and history")
+                                    sampleMenu(sample)
+                                }
+                                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .leading), count: width >= 710 ? 3 : 2), alignment: .leading, spacing: 15) {
+                                    metric("Left (µL)") { EditableSampleValue(sample: sample, field: .volume) }
+                                    metric("Conc. (\(concentrationUnit.rawValue))") { EditableSampleValue(sample: sample, field: .concentration) }
+                                    metric("Protein left") { Text(proteinMassLabel(sample.massUG, unit: massUnit)).monospacedDigit() }
+                                    metric("Taken out today (µL)") { withdrawalButton(sample) }
+                                    metric("Thaws") { ThawCounter(aliquot: sample) }
+                                    metric("Location") {
+                                        Text(sample.location.isEmpty ? "—" : sample.location).lineLimit(2).help(sample.location)
+                                        if sample.state != .unknown { Text(sample.state.rawValue).font(.caption).foregroundStyle(.secondary) }
+                                    }
+                                }
+                            }.padding(.vertical, 16)
+                            Divider()
+                        }
+                    }
+                }
+                Menu {
+                    Button("Add sample…") { sheet = .add(nil) }
+                    Button("New enzyme group…") { sheet = .newEnzyme }
+                } label: { Label("New enzyme or sample", systemImage: "plus.circle").padding(.vertical, 14) }
+                    .menuStyle(.borderlessButton).fixedSize().foregroundStyle(.tint)
+            }.padding(.horizontal, 20)
+        }.background(Color(nsColor: .textBackgroundColor))
+    }
+
+    private func metric<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title).font(.caption).foregroundStyle(.secondary)
+            content()
+        }.frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func withdrawalButton(_ a: Aliquot) -> some View {
+        TimelineView(.periodic(from: .now, by: 60)) { clock in
+            Button { openWithdrawal(a) } label: {
+                HStack(spacing: 8) {
+                    Text(number(a.takenOutUL(on: clock.date))).monospacedDigit()
+                    Image(systemName: "plus.circle").font(.callout)
+                }.frame(maxWidth: .infinity, alignment: .leading).frame(height: 26)
+                    .contentShape(Rectangle())
+            }.buttonStyle(.plain).foregroundStyle(.tint)
+                .disabled(a.archived || (a.remainingUL ?? 0) <= 0)
+                .accessibilityLabel("Taken out today for \(a.label). Log a withdrawal")
+                .accessibilityValue(volumeLabel(a.takenOutUL(on: clock.date)))
+                .help("Withdrawals logged today, such as assays. Excludes concentration measurements. Click to enter the amount removed in another withdrawal.")
+        }
+    }
+
+    private func sampleMenu(_ a: Aliquot) -> some View {
+        Menu {
+            Button("Log withdrawal…") { openWithdrawal(a) }
+                .disabled(a.archived || (a.remainingUL ?? 0) <= 0)
+            Button("Details & history…") { sheet = .details(a) }
+            groupMenu(a)
+            Divider()
+            Button("Mark refrozen") { recordState(a) }
+                .disabled(a.archived || a.state == .frozen)
+            Button("Change location…") { sheet = .event(a, .moved) }.disabled(a.archived)
+            Button("Adjust volume…") { sheet = .event(a, .volumeCorrection) }.disabled(a.archived)
+            Divider()
+            Button(a.archived ? "Restore sample" : "Archive sample") { archive(a) }
+        } label: { Image(systemName: "ellipsis") }
+        .menuStyle(.borderlessButton).fixedSize().help("More actions for \(a.label)")
+    }
 
     private func groupHeading(_ section: SampleGroupSection) -> some View {
         HStack(spacing: 12) {

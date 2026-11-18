@@ -7,18 +7,31 @@ struct PlateWorkspaceView: View {
     @State private var transfer: TransferContext?
     var body: some View {
         VStack(spacing:0) {
-            HStack {
-                Label("Plate editor",systemImage:"square.grid.3x3").font(.headline)
-                Text("Offline · saved on this Mac").font(.caption).foregroundStyle(.secondary)
-                Spacer()
-                Button {
-                    transfer=TransferContext(plateID:app.currentPlateID,title:app.currentPlateTitle,wells:app.currentWells)
-                } label: { Label("Record completed sample transfer…",systemImage:"arrow.down.right.circle") }.disabled(app.currentPlateID==nil)
+            ViewThatFits(in: .horizontal) {
+                HStack {
+                    Label("Plate editor", systemImage: "square.grid.3x3").font(.headline)
+                    Text("Offline · saved on this Mac").font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    transferButton
+                }
+                HStack {
+                    Label("Plates", systemImage: "square.grid.3x3").font(.headline)
+                    Spacer()
+                    transferButton
+                }
             }.padding(14)
             Divider()
             PlateWebView(app:app)
         }.sheet(item:$transfer) { context in TransferPicker(plateID:context.plateID,plateTitle:context.title,wells:context.wells).environmentObject(app) }
     }
+    private var transferButton: some View {
+        Button {
+            transfer = TransferContext(plateID: app.currentPlateID, title: app.currentPlateTitle, wells: app.currentWells)
+        } label: { Label("Record sample transfer…", systemImage: "arrow.down.right.circle") }
+            .disabled(app.currentPlateID == nil).fixedSize()
+            .help("Record a completed sample transfer to the selected plate wells")
+    }
+
 }
 struct TransferContext: Identifiable {
     let id=UUID()

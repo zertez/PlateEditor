@@ -7,8 +7,34 @@
   const fmt=n=>Number(n).toLocaleString(undefined,{minimumFractionDigits:3,maximumFractionDigits:3});
   let library={version:1,projects:[],active:null}, storageOK=true, selection=new Set(), anchor=null, layer=0, editIndex=null, mode=null, drag=null, display=V.normalize();
   const histories=new Map();
+  // Keep one live recipe form: moving it into a native dialog preserves drafts,
+  // event handlers and selection as the available window width changes.
+  const recipeInspector=$('recipe-inspector'), recipeHome=document.createComment('recipe inspector'), recipeDrawer=$('recipe-drawer');
+  recipeInspector.after(recipeHome);
+  const narrowWorkspace=window.matchMedia('(max-width: 1100px)');
+  function restoreInspector(){recipeHome.before(recipeInspector);scheduleFit();}
+  function showInspector(){
+    $('recipe-notice').hidden=true;
+    if(narrowWorkspace.matches){
+      $('recipe-drawer-content').append(recipeInspector);
+      if(!recipeDrawer.open)recipeDrawer.showModal();
+    }else{recipeInspector.scrollIntoView({block:'nearest'});}
+  }
+  function closeInspector(){if(recipeDrawer.open){recipeDrawer.close();restoreInspector();}}
+  $('open-recipe').onclick=showInspector;
+  $('close-recipe').onclick=closeInspector;
+  recipeDrawer.addEventListener('close',restoreInspector);
+  narrowWorkspace.addEventListener('change',event=>{
+    if(!event.matches)closeInspector();
+    else if(recipeInspector.contains(document.activeElement))showInspector();
+    scheduleFit();
+  });
   function project(){return library.projects.find(p=>p.id===library.active);}
-  function tell(message,error=false){$('notice').textContent=message;$('notice').hidden=false;$('notice').classList.toggle('error',error);}
+  function tell(message,error=false){
+    for(const id of recipeDrawer.open?['notice','recipe-notice']:['notice']){
+      $(id).textContent=message;$(id).hidden=false;$(id).classList.toggle('error',error);
+    }
+  }
   function persist(){
     if(window.PlateLab){
       $('save-state').textContent='Saving on this Mac…';
@@ -89,7 +115,7 @@
   }
   window.addEventListener('resize',scheduleFit);
   const fitObserver=new ResizeObserver(scheduleFit);
-  for(const selector of ['main','.app-header','#display-options','.display-status','#notice','.plate-card-top','.plate-card-bottom','#plate-grid'])fitObserver.observe(document.querySelector(selector));
+  for(const selector of ['main','.app-header','.library','#display-options','.display-status','#notice','.plate-card-top','.plate-card-bottom','#plate-grid'])fitObserver.observe(document.querySelector(selector));
   function updateDisplay(next){
     display=V.normalize(next);
     try{localStorage.setItem(DISPLAY_KEY,JSON.stringify(display));window.PlateLab?.saveDisplay(display).catch(e=>tell(e.message,true));}catch(e){tell('Display settings could not be saved.',true);}
@@ -147,16 +173,16 @@
   function download(data,name,type='application/json'){if(window.PlateLab){window.PlateLab.exportText(data,name,type).catch(e=>tell(e.message,true));return;}const u=URL.createObjectURL(new Blob([data],{type})),a=document.createElement('a');a.href=u;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);}
   const fileName=()=>project().title.replace(/[^\p{L}\p{N}._ -]/gu,'_').slice(0,150)||'Plate';
   $('project-list').onclick=e=>{const b=e.target.closest('[data-project]');if(b){stashDraft();navigate(b.dataset.project);restoreDraft();}};
-  $('conditions').onclick=e=>{const b=e.target.closest('[data-condition]');if(b)editCondition(+b.dataset.condition);};
-  $('well-details').onclick=e=>{const b=e.target.closest('[data-edit-well]');if(b)editCondition(+b.dataset.editWell);};
-  $('add-condition').onclick=$('reset-condition').onclick=()=>{if(display.wide)updateDisplay({...display,wide:false});resetForm();stashDraft();render();$('condition-name').focus();};
+  $('conditions').onclick=e=>{const b=e.target.closest('[data-condition]');if(b){editCondition(+b.dataset.condition);showInspector();}};
+  $('well-details').onclick=e=>{const b=e.target.closest('[data-edit-well]');if(b){editCondition(+b.dataset.editWell);showInspector();}};
+  $('add-condition').onclick=$('reset-condition').onclick=()=>{if(display.wide)updateDisplay({...display,wide:false});resetForm();stashDraft();render();showInspector();$('condition-name').focus();};
   $('variant-condition').onclick=()=>{const name=$('condition-name').value;editIndex=null;mode=null;$('condition-name').value=name?name+' (variant)':'';$('condition-color').value=M.colors[project().layout[1].length%M.colors.length];$('composer-heading').textContent='New variant';$('save-condition').textContent='Save condition';stashDraft();render();tell('This is an independent recipe. Rename or change its ingredients, then place it in empty wells.');};
   $('add-reagent').onclick=()=>{addReagent();stashDraft();};
   $('condition-form').oninput=()=>{updateTotal();stashDraft();};
   $('condition-form').onsubmit=e=>{e.preventDefault();try{saveCondition();}catch(err){tell(err.message,true);}};
-  $('place-mode').onclick=()=>{try{spec();mode=mode==='replicates'?null:'replicates';renderSelection();tell(mode?'Move over an empty well to preview your replicates, then click to place.':'Placement cancelled.');}catch(e){tell(e.message,true);}};
-  $('series-mode').onclick=()=>{try{spec();mode='series';plan(0);renderSelection();tell('Hover over the plate to preview the series. Each group gets the next tagged concentration; review reagent volumes for each group.');}catch(e){mode=null;tell(e.message,true);}};
-  $('assign-selected').onclick=()=>{try{const s=spec();let idx;const ok=change(p=>{idx=M.applyCondition(p,[...selection],s,editIndex,layer,tagValue(),$('tag-unit').value);delete p.draft;},'Recipe applied to selected wells only. Other wells are unchanged.');if(ok)editCondition(idx);}catch(e){tell(e.message,true);}};
+  $('place-mode').onclick=()=>{try{spec();mode=mode==='replicates'?null:'replicates';if(mode)closeInspector();renderSelection();tell(mode?'Move over an empty well to preview your replicates, then click to place.':'Placement cancelled.');}catch(e){tell(e.message,true);}};
+  $('series-mode').onclick=()=>{try{spec();mode='series';plan(0);closeInspector();renderSelection();tell('Hover over the plate to preview the series. Each group gets the next tagged concentration; review reagent volumes for each group.');}catch(e){mode=null;tell(e.message,true);}};
+  $('assign-selected').onclick=()=>{try{const s=spec();let idx;const ok=change(p=>{idx=M.applyCondition(p,[...selection],s,editIndex,layer,tagValue(),$('tag-unit').value);delete p.draft;},'Recipe applied to selected wells only. Other wells are unchanged.');if(ok){editCondition(idx);closeInspector();}}catch(e){tell(e.message,true);}};
   const grid=$('plate-grid');
   function peekWell(button){
     const preview=$('well-preview');
@@ -208,7 +234,7 @@
     $('well-dialog').showModal();
   };
   $('close-well-dialog').onclick=()=>$('well-dialog').close();
-  $('well-dialog-content').onclick=e=>{const b=e.target.closest('[data-edit-well]');if(b){$('well-dialog').close();editCondition(+b.dataset.editWell);}};
+  $('well-dialog-content').onclick=e=>{const b=e.target.closest('[data-edit-well]');if(b){$('well-dialog').close();editCondition(+b.dataset.editWell);showInspector();}};
   function preparePrint(){
     document.body.classList.toggle('readable-print',display.print==='details');
     document.body.classList.toggle('whole-plate-print',display.print==='plate');

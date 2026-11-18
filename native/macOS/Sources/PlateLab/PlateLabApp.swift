@@ -23,7 +23,7 @@ import SwiftData
         Window("PlateLab", id: "main") {
             if let state=bootstrap.state {
                 RootView().environmentObject(state).modelContainer(state.container)
-                    .frame(minWidth:1060,minHeight:680).tint(Color(nsColor: .systemTeal))
+                    .frame(minWidth:760,minHeight:600).tint(Color(nsColor: .systemTeal))
             } else {
                 VStack(alignment:.leading,spacing:18) {
                     Text("PlateLab could not open its library").font(.title2.bold())
